@@ -1,0 +1,2056 @@
+---
+title: "NRA-T"
+subtitle: "Numerical Risk Assessment Tool"
+author: "Benedikt Arnthof"
+date: "24 Februar 2020"
+abstract: |
+  An implementation of failure forecasting based on Weibull-Analysis. This tool us-es .xlsx file inputs to simulate the behaviour of a fleet of suspended engines and calculate expected resulting failure cases based on other specifications such as growing the active fleet through influx or shrinking the fleet through removals. Different kinds of inspections, combined with their according probabilities of defect detection, can also be specified. Further, quick plotting methods to visualize total unreliability given up to 10 superimposed failure modes are available as well. The fore-casting can be checked visually by a variety of diagnostic plots as well as manually, by downloading the complete simulation data. The impact of stochastic influences, such as influx under age distributions or sampled removal of engines from the fleet can be assessed doing multiple simulation runs on the fly. Last but not least, NRA-T also allows the users to verify forecasts about deep structural events given to the user by the department for structural mechanics. 
+output: 
+  html_document:
+    toc: TRUE
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
+    df_print: paged
+    code_folding: show
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("rmarkdown")
+library(ggplot2)
+library(microbenchmark)
+library(WeibullR)
+```
+
+# General Use
+
+This chapter is intended as an introductory text to help new users of **NRA-T** understand how to use this tool. It will discuss every tab-panel of the app independently and serve as a first reference point for interpretation of the results and the inner workings of the individual input and output procedures.
+
+## Data Input
+
+Upon first starting the app by running `app.R` the files `functions.R`, `simulation_uirework.R`, `debugweibull.R`, and `packageloader.R` will be sourced (executed). Currently `packageloader.R` takes care of automatically loading required packages, and installing packages not yet present in the default library path of the R installation. This comes at the cost of having to manually set the correct library path location in the second line of `packageloader.R` for the program to work. Once the app is finalized this will, of course, no longer be necessary. To test if everything has been installed correctly it is recommended to set the working directory to the folder in which all the mentioned files are located and then run `source("packageloader.R")` in the console. This should return `[1] "All packages loaded successfully."` if everything went according to plan.
+
+NRA-T is divided into multiple tab-panels, each serving its own specific purpose. Of course some of these panels rely on inputs given in other panels (most of all the _Forecasting_ panel), but we will discuss these dependencies later on. As a starting point it is required to provide at least a set of suspension data in the form of a `.xlsx` file. This file may contain multiple column vectors holding the (sorted or unsorted) ages of the fleet data that are going to  be analyzed. Here the user has the ability to filter by relevant markers and select relevant data by column ID. For later parameter estimation it is also required to supply another `.xlsx` that serves a column vector of failure data. The simulation can be carried out with custom parameters so if the user is only interested in simulating the fleet under known prior parameters, he can choose to do so without additional failure data.  
+
+```{r , echo=FALSE, fig.cap="**Fig. 1**: Example of a column vector containing suspension data", out.width = '40%'}
+#knitr::include_graphics("csvvector.png")
+```
+
+After uploading the file containing suspension data, the dynamic user interface should unfold after a short delay. On the left the user may then filter the data by other variables present in the Excel spreadsheet that was uploaded. These dynamic filters are a speedy way to define intervals for numeric data such as dates or fleet hours, but for more specific filtering manual preprocessing is still required. To con-firm which column contains the suspension data the user has to enter the (unique) ID of the column that contains the data into the “Suspension Column” box. In case the data are only present in broad hour intervals containing engine counts the “Use Bands?” box has to be ticked, and the “Counts Column” text box needs to be filled in with the name of the column containing the counts of the according intervals. This flexibility is the main reason why the Excel spread sheets that are to be analyzed need to be in the form of named column vectors. The file containing failure data can be uploaded and filtered in the same manner in the 'Failures' panel in very much the same way. After the ID of the columns containing the suspension and failure data has been given, a small output row holding a numeric vector should pop up above the data table. In addition to all of the above, the 'Code dplyr:' and 'Expression' outputs are going to return the dplyr and base R code generated to filter the data in the way given by the user. This is not strictly necessary, but allows a quick way of starting off further data cleaning and preprocessing, should it be necessary.
+
+## Parameter Estimation
+
+The _Parameter Estimation_ panel implements the fast default methods for graphical failure analysis of the 'weibullR' package. To receive a plot output from this panel both suspension and failure data must be given as inputs in the _Data Input_ panel. The Weibayes methods will yield a plot of the estimated two parameter likelihood ridge and will output the corresponding eta parameter given a prior beta as restriction. For the rest of this documentation the parameters used will be the shape and scale (beta and theta/eta) parameters of the Weibull distribution. A classic Weibull analysis uses 2-Parameter Median Rank Regression but the beta and eta values for the simulation can be adjusted freely by the user. The error calculation in the _Forecasting_ and _Multiruns_ panels support the Weibull, Lognormal and Normal distributions. 
+
+## Comp. Modes
+
+The _Comp. Modes_ or competing modes Panel serves as a quick way to visualize the system unreliability in case there are multiple failure modes present. Currently, the mixture distribution can be defined by up to ten different modes, but one should keep in mind that for more than three superimposed modes the system distribution tends to act like a single 3 parameter Weibull distribution. To return a plot the user has to first select the amount of distribution he wishes to mix and then type each of their parameters into their boxes. Because the points to be plotted in these curves are calculated in a convoluted manner, that needs sampling of points from Weibull distributions to define the limits of the returned plot, the axis labeling of the plots is going to differ each time the plots are refreshed. The information conveyed in these plots however, stays the same.
+
+## Plots
+
+The _Plots_ panel is a customizable extension of the _Param. Estim._ Panel. Here production quality plots can be tailored to the needs of the analyst with little to no effort. All different types of Weibull and Lognormal Distributions can be fit to the data with both median rank regression and maximum likelihood estimation. Various types of confidence bounds may also be calculated, but depending on the specified fit, the user is restricted to methods that are consistent with it. Rank regression estimates, for example, will not allow likelihood ratio bounds. This is a limitation of the WeibullR package, but should be possible to extend with relatively little programming effort.
+
+## Removals  
+
+The _Removals_ Panel not only allows the user to specify if monthly removal of engines from the fleet should be carried out and if so, how many, but also provides multiple options to fine tune this removal process. In the simplest case (under the assumption that the removal process in the real world follows a uniform distribution) all the user has to do, is to upload another `.csv` file that contains the amounts of engines that should be removed from the fleet in every month. For example, a file containing the column vector (7,5,4,0,6) would result in seven engines being removed in the first month, five in the second month, 4 in the third month and so on. If the simulation is supposed to run for a greater period than the amount of removal months given, no engines will be removed in these additional months. It is not possible to "add" engines by removing a negative amount, as the _Influx_ process is assumed to follow a different procedure. The engines to be removed are sampled from the fleet randomly according to the weights assigned by the user. If no distribution file is uploaded there are currently four ways of calculating these weights. Uniform weights assign the same weight to every engine, Normal weights assign weights based on a normal distribution fitted to the suspension data. These cases can be used as a naive, basic approach when no other assumptions can be made or larger weights should be attached to the "middle" of the fleet. (The highest density suspension interval.) The other two choices attribute weights to the suspension data based on the Empirical Cumulative Distribution Functions (ECDF) of the fitted distributions. Very similar in structure, the uniform ECDF is more "sensitive" to outliers and thus yields higher relative weights for older engines compared to the ECDF of a normal distribution that has been fit to the same suspension data.  
+In case the user has access to the hour counts at which engines have been removed from the fleet in the past, it is also possible to calculate sampling weights based on this information. To do so, the user has to tick the check box `Use Distribution File?` and, after refreshing the page, upload the `.csv` through the `Select distribution file` input. This file should, of course, be yet another column vector.  
+The sampling weights chosen for the removal process are visualized in the bottommost plot; in the case of sampling according to prior information an additional plot to compare a kernel density estimate of the prior removals to the calculated weights is displayed at the top of the page. The precise process in which the weights are determined is explained in _Function Documentation_. 
+
+## Influx
+
+At first glance the _Influx_ panel grants the user two options: To grow the fleet through a monthly influx or not to do so. If, however, the user is interested in the effect of a stream of engines entering the fleet he can in a first step supply the app with a `.csv` file containing a column vector of `influxamounts` that should be added to the fleet in every month of the simulation and then choose a method to sample the initial ages with which the influx stream will enter the fleet. The default case `Constant` assumes a constant age of all inflowing engines with a standard value of 0. (This makes intuitive sense given that in the real world things don't usually have negative ages.) For a discussion of shelf-life wear out, a case where negative ages would indeed seem appropriate, refer to [The New Weibull Handbook](http://www.barringer1.com/pdf/preface-toc-5th-edition.pdf). The method `Prior` allows the user to upload another `.csv` file containing yet another column vector specifying known ages of engines that have entered the fleet in the past. The other non-default methods of sampling initial ages for inflowing engines include, but are not limited to, the uniform and normal distribution. All the user has to specify in these cases are the parameters unique to the type of distribution from which the user would like to draw from. How exactly these non-standard cases are being conducted, and how the dynamic UI enabling us to choose from this rich selection of distributions is constructed will be discussed in the sections covering the _Methodological Background_ and the _Structure of the Program_ respectively. All the user has to keep in mind at this stage, is that, in order to yield sensible results and avoid crashing the program, only ages larger than or equal to zero are being sampled. (One should note, that 'crashing the program' with influx age sampling under default conditions should not be possible as the amount of ages being sampled is not large enough to reach the maximum call stack size of R. More on that in _Function Documentation_) 
+
+
+## Inspections  
+
+It can be very interesting to incorporate inspections into the analysis of expected failures. For this purpose, the _Inspections_ panel once again allows the user to first tick the corresponding check box if he wishes to perform inspections, and, after a spreadsheet supplying the app with both the interval values at which an inspection should be performed, and the probabilities of error detection at each of these intervals has been uploaded, to filter and process the data in exactly the same way as the suspension data. The error detection probabilities can be defined up to the fourth decimal point, and every inspection calculation will be carried out according to this accuracy.
+But prior testing has shown that the stochastic impact of any but the second significant digit are negligible.
+The general Idea for simulating the effect of inspections on the suspension data is to reset the hour count for certain engines back to 0, respecting, of course, the prob-ability of detection. An inspection conducted at 1000 hours, with a probability of error detection of 0.6, would reset the hour count for engines crossing the 1000-hour threshold in the current monthly cycle in approximately 60% of cases. These hour count resets can be seen as bumps in the diagnostic plots of the _Diagnostics_ panel. A discussion on how to interpret these bumps can be found in the _Diagnostics_ section; a thorough explanation of the inspection functions can be found in the _Function Documentation_.
+
+## Forecasting  
+
+The first choice the user should make in the _Simulation_ panel is the type of error calculation to be performed. Both the deterministic and non-deterministic approach-es yield very similar results, but depending on the number of draws from the Weibull distribution that are being done to approximate the error number in the non-deterministic case, the deterministic method performs 500-5000 times better. An in-depth explanation of the calculation procedures can be found in the _Error Calculations_ section of the _Methodological Background_ chapter.
+The next two checkboxes relate to how the accumulating faulty engines are handled over time. A removal of a sample of faulty engines will cause the fleet count to shrink proportional to the amount of errors that accumulated in every time step. These accumulated errors are rounded down for easier interpretation. In addition to that, a replacement of faulty engines adds the same amount of zero hour engines to the fleet. This results in a diagnostic plot similar to the one on page 4-12 of The New Weibull Handbook.
+The 'Months' and 'Monthly Hours' inputs define the amount of discrete simulation steps to run, as well as the runtime in-between each of these time steps. A larger amount of monthly hours coupled with fewer steps overall will result in a quicker runtime, which is especially noticeable in the _Multiruns_ panel, but will in turn cause the interpretation of results to be less straight forward.
+The 'Incubation Time' and 'Max. Life' inputs specify the t0 parameter in the 3 parameter Weibull case and the maximum time an engine can contribute to the overall error expectation. The marginal contributions of engines younger than the incubation time threshold are set to 0, engines older than the maximum life are removed from the fleet.
+The user can specify the 'Beta' and 'Theta' (Shape and Scale) of the Weibull distribution used to estimate the monthly errors through the corresponding input boxes.
+
+```{r , echo=FALSE, fig.cap="**Fig. 2**: Example of specifying an error free Period > 0", out.width = '100%'}
+#knitr::include_graphics("errorfreeperiod.png")
+```
+In the example above monthly hours of 150 were chosen in combination with an error free period of 10000 hours. It takes the fleet 17 months to start aging past the 10k hour mark, then the errors start accumulating relatively quickly, based on the specified Weibull parameters of course.
+Caveat: It can be of use for exploratory analysis to look at the results for different error free periods. However, 't0' is usually estimated from the data as the third parameter in a 3-parameter Weibull analysis, and should be chosen as such.
+The 'Number of Draws' input has no effect on the deterministic error calculation. For the non-deterministic approach this dictates the amount of draws from the Weibull distribution that are used to approximate the relative error rate for every engine in every month. The larger the 'Number of Draws' the more precisely are the non-deterministic results going to approximate the deterministic results, and the longer the _Simulation_ runtime is going to be.
+The outputs of the _Simulation_ panel are to be understood as follows:
+The 'Number of initial failures' is equal to the relative error value (see _Error Calculations_ for details) of the fleet before starting the simulation. This value should roughly be equal to the amount of failure cases supplied for parameter estimation, if the estimated parameters are used as 'Beta' and 'Theta' inputs respectively.
+The 'Number of failures after simulation' is equal to the cumulative sum of the errors occurring in every step (every month) of the _Simulation_. Without modifications to the age of the fleet or the fleet itself, such as _Influx_, _Removals_, or _Inspections_ the Sum of these two failure numbers will approximate the total size of the fleet after a large amount of months.
+A good rule of thumb to estimate when this happens is to look at the 99% quantile of the specified Weibull distribution. Once the lion's share of the fleet ages past this threshold the relative errors of every engine will no longer increase by a noticeable amount every month. Over the course of the exploratory analysis the user may, of course, also take a look at the _Diagnostics_ panel to try and gauge the impact of the chosen parameters. More on this in the next section.
+
+## Diagnostics  
+
+As yet the _Diagnostics_ panel yields five different diagnostic plots. The 'Errors: Cumulative & Monthly' plot is perhaps the hardest to interpret. In the simplest case, when there are no alterations being made on the fleet, the cumulative line will steadily increase over the chosen time span. The more hours the fleet ages every month, the steeper the incline of this curve. If, however, there are changes being made on the fleet itself, then the monthly error count might contain negative values for certain months, (mostly prevalent at the start of _Inspection_ periods or after a large amount of _Removals_ has been made) and thus the cumulative plot will show dips and no longer steadily grow to the total size of the fleet. Because of this, the cumulative error line should only be interpreted as such, if the line is monotonously growing.
+```{r , echo=FALSE, fig.cap="**Fig. 3**: An example of dips and negative values in the cumulative and monthly lines.", out.width = '100%'}
+# knitr::include_graphics("errorplot1.png")
+```
+Figure three depicts the estimated monthly failure cases for a fleet of 1012 engines, under the assumption that _Inspections_ with a probability of failure detection of 90% are being conducted every 5000 hours. From month 30 to month 120 the deviation seems to decrease, this is because for the first half of the example simulation a steady stream of 0-10 engines are removed from the fleet. (As can be seen in figure 4.) For the second half of the example this process is reversed -- a stream of 0-10 engines enters the fleet with initial ages seeded as normally distributed with a mean of 50 and standard deviation of 15.
+The 'Fleetplot' currently only serves the purpose to verify that the _Influx_ and _Removals_ algorithms perform correctly, and can be interpreted at face value. Every point in the plot is the number of engines present in the fleet in every step of the simulation.
+```{r , echo=FALSE, fig.cap="**Fig. 4**: A fleetplot for Removal and Influx of 0-10 engines every month.", out.width = '100%'}
+# knitr::include_graphics("fleetplot.png")
+```
+The third visualization in the _Diagnostics_ panel is the 'Monthly relative Errors' plot. Very similar in looks to the cumulative version, this plot depicts the amount of engines that are expected to fail under the chosen parameters relative to the size of the fleet. In the 100th month of Figure 5, such as, about 2.8% of the fleet, or 28 engines in total, are expected to fail under the chosen parameters.
+All these plots are to be taken with a grain of salt. While the deterministic method of failure estimation produces the same results for the same set of parameters chosen in _Forecasting_ if the fleet is not modified over the course of the simulation, it does not do so if _Influx_, _Removals_, or _Inspections_ with probabilities of failure detection less than 1 are being done. To assess the variation introduced by these procedures, the user should always run multiple different analyses. The simplest way of doing so is of course to utilize the _Multiruns_ panel. The next section will com-pare these operations and outline a Bayesian way of evaluating the variance of the fleet error estimators.
+The 'Errorbounds' plot serves to visualize the maximum and minimum expected amounts of errors under the assumption of a constant shape parameter and with the 95% confidence values of the scale parameter evaluated at the characteristic life of the Weibull distribution. Because of this methodology this plot only works for the Weibull method and can yield very drastic values depending on how much uncensored data is available. It can be quickly verified that the range of the 95% interval values of the scale parameter is very broad in most cases, since there are only few uncensored failure points given in a usual, “healthy” fleet of engines. Further discussion of this routine can be found in the next section. 
+
+## Mutiruns
+
+The _Multiruns_ panel allows for quick checks of the variational impact stochastic influences have on the results of the simulation. Both the number of runs to be performed and a random seed can be entered into each of the boxes. To ensure a reasonable runtime it is strongly recommended to use the deterministic forecasting method. It can also be beneficial to increase the amount of monthly hours and, in turn, decrease the amount of months the simulation runs for. This will reduce the temporal resolution of the simulation results, but may save a lot of time for larger amounts of runs. This, of course, makes it a little more tricky to interpret the results. The complete simulation results can be visualized both with points and violin plots; individual months of interest may also be visualized as a pseudo density plot.
+
+## POF
+
+In this panel a non parametric simulation unrelated to the rest of the app can be conducted. Both single fleet and two fleet simulation are supported. Fleet and Influx data have to be uploaded in correctly formatted .csv files. The maximum ages serve as upper limit for the length of the simulations to run, the “CPT” or cycles per time step are used to generate the resulting error curves. Similar to the monthly hours in the _Forecasting_ panel, these limit the temporal resolution of the results.
+As mentioned before, this simulation is non parametric, for it to run a .out file, as supplied to us by the structural mechanics team has to be uploaded for every fleet individually. These files need to be formatted as shown in the image below.
+
+## Cracks
+
+This panel allows a Monte Carlo analysis of crack propagation cycles until failure time data as frequently used in reports issued by Pratt & Whitney. All that is needed, is a spreadsheet containing fleet data in a column vector. Next the user specifies a function that determines the expected life by initial crack size. Such a function has to be given in syntax that is understood by the R interpreter. A sensible default is given in the input box. Once again 'Number of Cycles' determines the total amount of discrete time steps that should be simulated, the 'Hours per Cycle' determine the temporal resolution of the simulation and 'Number of Runs' give the total number of repetitions. Currently, up to three different initial crack sizes may be given, but the underlying processing is modularized and based on the excellent functional programming methods that come shipped with the purrr package, so all the inputs present here can be extended with very little effort.
+The 'Proportions of Cracks in Fleet' inputs contain the proportions of every failure mode present in the Fleet. The default values sum up to 100 but one may also type in a one in every single one of the boxes to distribute error modes evenly among the fleet. (This would be equivalent to typing in 33.33 into all the boxes.)
+All initial crack sizes are sampled from truncated normal distributions with a mini-mum strictly larger than 0 and a maximum given by the values entered into the 'Maximum Crack Sizes in mm' row. The needed values for mean and standard deviation of these distributions must be entered into the rows of the same name. One should keep in mind that the sampling is truncated and only works if sensible values are supplied. Sampling with a mean of 10 and a maximum of 1 under a sufficiently small standard deviation would cause the recursive sampling to run indefinitely. For such cases a warning message will be printed out in the R console.
+
+# Methodological Background
+
+This chapter explains the motivation and statistical background underlying the implemented methods for sampling of _Removals_, the drawing procedure for the ages of inflowing engines and discusses the two different functions lurking underneath the error calculation at the heart of the _Simulation_. If you're interested in **how** exactly these algorithms are implemented, refer to the _Structure of the Program_ section, as this chapter will mostly deal with **why** these procedures have been implemented in their respective ways.
+
+## Removal Sampling
+
+No matter the method chosen by the user, to sample from the fleet of engines according to a predefined distribution we need to first rescale the data to the same scale as our chosen distribution. Because the fleet not only ages in every step of the simulation, but also changes in formation based on possible prior removals this rescaling procedure is repeated every time _Removals_ are to be performed. The only exception to this rule is the uniform case, where, because every engine is supposed to be sampled for removal with the same probability, one may skip the rescaling and assigning weights procedure entirely.  
+After the data have been rescaled a vector of weights is generated to reflect the density values for every point. This vector of sampling weights is then used to sample from the fleet based on these obtained weights. This procedure describes what is going on in the `uniform` and `normal` cases. (And their `ECDF` counterparts.)  
+Usually however, the user does have prior data of the times on which engines have been removed from the fleet available. In these cases it may be interesting to sample the engines to be removed from the fleet in consonance with this information. To accomplish this, first the estimated probability density function is computed as roughly outlined [here](https://stats.stackexchange.com/questions/78711/how-to-find-estimate-probability-density-function-from-density-function-in-r), then the data are rescaled to the same scale as described above, and in a final step the resulting sampling weights are used to draw the "to be removed" engines from the fleet. An exact breakdown of the implemented functions can be found in _Function Documentation_.  
+It should be mentioned here, that we plan on adding support for generating removal weights based on a custom beta distribution fully described by parameter values specified by user input. This will allow for full flexibility in the removal process, at the cost of a little transparency. At the moment, **NRA-T** only supports failure forecasting based on a singular distribution however, thus the potential u-shaped sample weight distributions that can be generated from a beta distribution and may be used to account for multiple different failure modes do not make sense. As is, the user may choose to generate a list of beta distributed values to be used as distribution input in the _Removals_ panel anyway, but it should be noted that such a strategy may not make sense in the current implementation and should be interpreted with care.
+
+## Influx Sampling
+
+The Influx process is a lot more interesting than one may suspect. At first glance, all that is to be done is to expand the fleet every month based on the amounts given in the `.csv` uploaded by the user. And in the elementary case of adding engines to the fleet that all have a predefined, constant age that is indeed the case. Even if the ages are to be sampled from a known distribution based on user-defined parameters, generating ages is still pretty straightforward. The difficulty here lies mostly in the construction of a dynamic user interface that allows for such endeavours, which is described thoroughly in the section _Structure of the Program_: _UI_. But in case the user wants to sample from a custom distribution defined not by parameters but by prior data, the age generation gets a little more engaging.  
+First a [kernel density estimate](http://www.mvstat.net/tduong/research/seminars/seminar-2001-05/) based on a Gauss kernel is performed on the user-specified data. Then a sample of means is drawn with replacement from the original data. Based on these means, a sample can then be drawn from a normal distribution with mean equal to the vector of means drawn in the earlier step and standard deviation equal to the bandwidth of the kernel density estimate. This strategy is outlined [here](https://stats.stackexchange.com/questions/82797/how-to-draw-random-samples-from-a-non-parametric-estimated-distribution), and further explained in _Function Documentation_.  
+
+## Error Calculations
+
+The User has two different methods of calculating estimates for the expected errors in a certain time frame to choose from. This section compares the classic, non-deterministic approach to the faster, deterministic approach. We argue, that the uncertainty in the results should not stem from "artificial" variation introduced by random draws for every engine in every monthly step, and that the performance enhancement gained from calculating exact values is too valuable to pass up.  
+Caveat: We will use the terms "exact" and "heuristic" to refer to the deterministic and non-deterministic methods from here on out. One should be careful with the interpretation of the word "exact" here. The deterministic function calculates the exact area under the Weibull curve given an hour value and predetermined shape and scale parameters. The heuristic function approximates this value. This does _not_ mean that the results of the error calculation are exact. The result of both methods is an estimate.  
+We also introduce a Bayesian approach of estimating the underlying variance of this error estimator. (It is not yet certain that the Bayesian approach makes sense in the context of the given data.)  
+
+### Non-Deterministic Approach
+```{r, eval = F, show = T}
+calc_errors <- function(nweib, amnt, ssp, bet, tht, efperiod) {
+  erroriter <- numeric(length = nweib) 
+  avgerrors <- numeric(length = amnt)
+  for (j in 1:amnt) {
+    susp_line <- ssp$hband[j]
+    weibull <- rweibull(nweib, shape = bet, scale = tht)
+    erroriter <- as.numeric((susp_line - weibull) > 0)
+    total <- sum(erroriter)
+    avgerrors[j] <- total / nweib
+  }
+  # respecting the errorfreeperiod
+  check <- ssp$htotal < efperiod
+  avgerrors[check] <- 0
+  gesamtfehler <- sum(avgerrors) 
+  return(gesamtfehler)
+}
+```
+
+The old Version of estimating error probabilities compares suspension hour counts to 500-5000 draws from the Weibull distribution with corresponding shape and scale parameters. (2.51 and 14400 in this example.)  
+This approach is very similar to performing Monte Carlo integration to find the area under the curve of the distribution to the left of the suspension hour count. And as such, it is slow and computationally inefficient. 
+
+```{r, eval = T, show = F, fig.cap="**Fig. 5**: Area under the curve for a suspension value of 20000 hours."}
+suspension <- 20000
+curve(dweibull(x, shape = 2.51, scale = 14400), from = 0, to = 50000, xlab = "", ylab = "")
+abline(v = suspension)
+abline(h = 0)
+cord.x <- c(0, seq(from = 0, to = suspension, by = 50), suspension)
+cord.y <- c(0, dweibull(seq(0,suspension,50), shape = 2.51, scale = 14400), 0)
+polygon(cord.x,cord.y,col = 'skyblue')
+title(main = "Density of the weibull distribution. \n beta = 2.51, theta = 14400", 
+      xlab = "Time in hours",
+      ylab = "")
+```
+
+The larger the sample size, the better does the empirical distribution function approximate the real distribution function. Thus, using the heuristic approach of sampling and comparing, the estimated error probability converges to the exact area under the curve given by `r pweibull(20000, shape = 2.51, scale = 14400)` for a very large sample. 
+Not only can approximating the value under the curve through random draws be computationally costly, (for a fleet of 1000 engines one million draws are required in every iteration if we approximate with 1000 draws) even if we reuse the same draws for every iteration (thus avoid wasting resources on more random draws) the sample has to be stored in memory and again, for a fleet of 1000 engines and 1000 draws one million logical checks would have to be performed in every step to approximate the areas under the curve for the entire fleet. 
+
+To compare the heuristic method to her exact counterpart, the following simulation has been constructed:  
+
+```{r eval = T, show = T}
+# An example for a suspension vector containing 546 entries
+sus <- c(seq(from = 50, to = 5500, by = 10))
+# the heuristic implementation (here with a fixed theta)
+heuristic <- function(suspensions, nw, beta, theta) {
+  ret <- numeric(length = length(suspensions))
+  for (i in 1:length(suspensions)) {
+    susp_line <- suspensions[i]
+    draws <- rweibull(nw, shape = beta, scale = 14400)
+    check <- as.numeric(susp_line > draws)
+    errors <- sum(check)
+    ret[i] <- errors/nw
+  }
+  return(ret)
+}
+```
+
+`exact` is `heuristic`'s performant counterpart. Under the assumption that `heuristic` draws an infinite amount of values from the Weibull distribution these two methods would be equivalent.  
+
+```{r, eval = T, show = T}
+exact <- function(suspensions, beta, theta) {
+  s <- as.vector(unlist(suspensions))
+  ret <- pweibull(s, shape = beta, scale = theta)
+  ret <- round(ret, digits = 4)
+  return(ret)
+}
+```
+
+`simulation` compares the absolute differences of the estimated values of both functions.
+```{r, eval = T, show = T}
+simulation <- function(start = 1, end = 1000, susp, beta, theta) {
+  ret <- numeric(length = length(start:end))
+  for (i in start:end) {
+    heu <- heuristic(suspensions = susp, nw = i, beta, theta)
+    exa <- exact(suspensions = susp, beta, theta)
+    ret[i] <- mean(abs(heu - exa))
+  }
+  x <- start:end
+  qplot(x, ret, geom = "point", alpha = 0.25,
+        main = "Average Absolute Differences: Heuristic vs. Exact Approach",
+        xlab = "n Weibull Draws",
+        ylab = "Absolute Average Differences") +
+    theme(legend.position = "none")
+}
+```
+
+```{r, eval = T, show = T, fig.cap="**Fig. 6**: Comparing the absolute differences of both approaches"}
+simulation(start = 1, end = 500, susp = sus, beta = 2.51, theta = 14400)
+```
+
+As the number of Weibull draws increases, the absolute differences of values computed by both functions converge to zero. To further compare both methods, a benchmark test has been constructed. For performance reasons of this compiled report this test has only been evaluated for sample sizes ranging from 1 to 200. The idea of this test is, to compare the runtime differences of both functions and visualize them intuitively. 
+
+```{r, eval = T, show = F}
+cmptimes <- function(start = 1, end = 500) {
+  res <- data.frame()
+  for (i in start:end) {
+    mbm <- microbenchmark::microbenchmark(
+      heur <- heuristic(suspensions = sus, nw = i, beta = 2.51, theta = 14400),
+      exac <- exact(suspensions = sus, beta = 2.51, theta = 14400),
+      times = 50L,
+      control = list(order = "block", warmup = 25)
+    )
+    tmp <- as.data.frame.matrix(cbind(mbm$expr, mbm$time))
+    tmp <- aggregate(tmp, list(tmp$V1), mean)
+    tmp$sample <- i
+    res <- rbind(res, tmp)
+  }
+  res <- data.table::shift(res$V2) - res$V2
+  res <- res[res > 0 & !is.na(res)]
+  res <- res/1e+9 # convert from nanoseconds to seconds
+  x <- start:end
+  ggplot2::qplot(x, res, geom = "point", alpha = 0.25,
+        main = "Performance Differences by Sample Size",
+        xlab = "n Weibull draws",
+        ylab = "Absolute Time Difference") +
+    labs(subtitle = "Abs. Time Diff. (in s) = t(heuristic) - t(exact)") +
+    theme(legend.position = "none")
+}
+
+```
+
+```{r, show = F, eval = T, fig.cap="**Fig. 7**: Comparing the performance of both approaches"}
+cmptimes(start = 1, end = 200)
+```
+
+Apart from the occasional bump in processing time caused most likely by the stochastic nature of modern CPU times, the differences in required processing time grow linearly as the number of draws from the Weibull distribution increases. This makes intuitive sense, as the `heuristic` method should decrease in performance linearly as the number of draws increments, whereas `exact` performs a constant number of operations. For a given number of draws (e.g. 5000) `exact` should outperform `heuristic` by about 3.5 orders of magnitude. This can be examined with the help of another benchmark test. 
+
+```{r, eval = T, show = F, echo=FALSE,results='hide',fig.keep='last',fig.cap="**Fig. 8**: Comparing performance for a set amount of draws."}
+heur <- quote(heuristic(suspensions = sus, nw = 5000, beta = 2.51, theta = 14400))
+exac <- quote(exact(suspensions = sus, beta = 2.51, theta = 14400))
+mbm <- microbenchmark::microbenchmark(
+      HEU <- eval(heur),
+      EXA <- eval(exac),
+      times = 25L,
+      control = list(order = "block", warmup = 25)
+    )
+ggplot2::autoplot(mbm)
+```
+
+As expected, the `exact` function is more than 3 orders of magnitude faster than the classic approach. Not only does this allow us to compute failure cases in real time, it also renders the simulation of multiple (maybe hundreds) of fleets a thing of possibility. This may serve to measure the variation introduced to the model by the different types of fleet manipulation discussed above, or to estimate the variance in the fleet error estimator itself based on sampling the Weibull parameters used for error calculation from a posterior distribution calculated from a prior distribution and the corresponding likelihood function. This is a Bayesian approach and a lot more transparent than the frequentist approach of assuming a true underlying, fixed parameter pair to exist, but past experience shows that the parameters themselves vary a lot less than a likelihood ratio plot might indicate. More research has yet to be done in this area. 
+
+```{r, eval = T, show = F, echo=FALSE,results='hide',fig.keep='last', fig.cap="**Fig. 9**: A plot of the likelihood ratio for the beta and theta parameters based on example data."}
+das <- read.table("I:/airworthiness.p/01_Mitarbeiter/Benedikt Arnthof/wd/Suspensions_Iststand.csv")
+daf <- read.table("I:/airworthiness.p/01_Mitarbeiter/Benedikt Arnthof/wd/Failure1.csv")
+
+# contour.wblr requires an object of class wblr so we create an aggregated table of the
+# suspension data
+fdf <- as.data.frame(table(daf[, 1]))
+ft <- as.numeric(levels(fdf[, 1]))
+fq <- fdf[, 2]
+sdf <- as.data.frame(table(das[, 1]))
+st <- as.numeric(levels(sdf[, 1]))
+sq <- sdf[, 2]
+fail_edata <- data.frame(time = ft, event = rep(1, length(ft)), qty = fq)
+sus_edata <- data.frame(time = st, event = rep(0, length(st)), qty = sq)
+teq_frame <- rbind(fail_edata, sus_edata)
+
+source("debugweibull.R")
+contour.wblr(wblr(teq_frame),col = "darkgrey")
+
+# simple weibayes function
+beta_range <- seq(1.5, 4, by = 0.1)
+wbpts <- NULL
+for (b in beta_range) {
+  eta <- weibayesfix(teq_frame, beta = b)
+  this_pt <- c(eta, b)
+  wbpts <- rbind(wbpts, this_pt)
+}
+
+prior <- 2.51
+etaprior <- weibayesfix(teq_frame, beta = prior)
+ppnt <- c(etaprior, prior)
+ppnt <- rbind(NULL, ppnt)
+
+points(wbpts, pch = 3, col = "blue")
+points(ppnt, pch = 3, col = "red")
+legend(20000, 3.5,
+  legend = c("Ridge of the Weibayes estimate",
+             "Estimate using prior info"),
+  bg = "white", col = c("blue", "red"), pch = 3, text.font = 2
+)
+title(main = "Comparing Weibayes Pointestimates \n to MLE-Contour")
+```
+
+This plot visualizes the two-dimensional parameter space for `Beta` & `Theta`. (The shape and scale parameters of the Weibull distribution.) The contours visible correspond to areas of constant likelihood ratio around the maximum likelihood estimator (x). The blue crosses further visualize, that Weibayes estimation under the assumption of a prior `Beta` known from past experience is equal to a restricted estimation with results falling on the ridge of the likelihood ratio "mountain".
+
+## Statistics
+
+This section will feature a description of the Bayesian method outlined above, if we ever figure out how to implement it in a manner that makes sense. As of yet it is just a collection of useful links that may help solve future issues. 
+
+fitdistrplus to analyze fit of data to distribution, will be needed for work on package  
+https://stats.stackexchange.com/questions/132652/how-to-determine-which-distribution-fits-my-data-best  
+weibull distribution parameters bootstrapping  
+https://stats.stackexchange.com/questions/60511/weibull-distribution-parameters-k-and-c-for-wind-speed-data/60530#60530  
+the EM algorithm to estimate the parameters of two overlapping distributions  
+https://stats.stackexchange.com/questions/72774/numerical-example-to-understand-expectation-maximization  
+https://en.wikipedia.org/wiki/File%3aEm_old_faithful.gif  
+Interactive data input shiny  
+https://stackoverflow.com/questions/22272571/data-input-via-shinytable-in-r-shiny-application  
+Probability of a point taken from a certain normal distribution will be greater than a point taken from another  
+https://math.stackexchange.com/questions/40224/probability-of-a-point-taken-from-a-certain-normal-distribution-will-be-greater  
+Probability that a draw from one sample is greater than a draw from another sample  
+https://stats.stackexchange.com/questions/71531/probability-that-a-draw-from-one-sample-is-greater-than-a-draw-from-a-another-sa?noredirect=1&lq=1  
+
+## R
+
+This section describes a few quirks of the `Shiny` package used to build `NRA-T`, as well as a few tricks used to enhance the performance and compactness of the program at the cost of decreasing its readability a little bit. It should be noted, that the author of the program is still very much a novice when it comes to the construction of web applications and software development in general. The authors' preference of both statistical computing and functional programming should be apparent to the advanced reader, for the lack of object oriented programming and the abundance of vectorization to avoid loops can cause the code to be obscure at times.
+
+### Shiny
+
+Shiny is an R package that combines the computational power of R with the interactivity of the modern web. It makes it possible to build interactive web applications straight from R. These applications can be hosted as standalone versions, on a webpage or be embedded into R Markdown documents. To make them more appealing to the eye than the default look may suggest it is also possible to extend Shiny apps with CSS themes, htmlwidgets, and JavaScript actions. [Source](https://shiny.rstudio.com/)
+
+Shiny applications are generally divided into separate `ui` and `server` files, but can also be combined into a single `app` file. A detailed starter guide can be found [here](https://shiny.rstudio.com/tutorial/). The very first line of the `app` file of NRA-T (`options(shiny.launch.browser = .rs.invokeShinyWindowViewer)`) is optional and just sets the default browser that will be used to display the application to the builtin R viewer. It is recommended to use either the default R viewer or a modern browser like Firefox or Chrome, as some features of R and Shiny may not be compatible with Internet Explorer. For a more detailed explanation of the `app` file refer to the _Server_ and _UI_ subsections of _Structure of the Program_. For now all the user has to keep in mind is, that in to make the composition of Shiny applications as effortless as it is for most basic tasks, the concept of [reactivity](https://shiny.rstudio.com/tutorial/written-tutorial/lesson6/) is vital to understand. This, in turn, makes the assembly of dynamic user interfaces relatively straightforward. Also, the app relies heavily on [conditional panels](https://shiny.rstudio.com/reference/shiny/0.11/conditionalPanel.html) to construct UI elements on the fly. 
+
+### Modularization of Shiny Code
+
+“As Shiny applications grow larger and more complicated, app authors frequently ask us for techniques, patterns, and recommendations for managing the growing complexity of Shiny application code. In the past, we’ve responded rather glibly to these requests: “Just use functions!” Functions are the fundamental unit of abstraction in R, and we designed Shiny to work with them. You can write UI-generating functions and call them from your app’s ui.R, and you can write functions for server.R that define outputs and create reactive expressions.
+In practice, though, functions alone don’t solve enough of the problem. Input and output IDs in Shiny apps share a global namespace, meaning, each ID must be unique across the entire app. If you’re using functions to generate UI, and those functions generate inputs and outputs, then you need to ensure that none of the IDs collide.
+In computer science, the traditional solution to the problem of name collisions is namespaces. As long as names are unique within a namespace, and no two namespaces have the same name, then each namespace/name combination is guaranteed to be unique. Many systems will let you nest namespaces, so a namespace doesn’t need a name that’s globally unique, just unique within its parent namespace.
+Shiny modules address the namespacing problem in Shiny UI and server logic, adding a level of abstraction beyond functions.” [R Core Team]( https://shiny.rstudio.com/articles/modules.html)
+
+Most of the UI and Server logic present in this program is different enough from one another to warrant the use of non-modularized code. For handling file input efficiently and in a manner that is convenient for the user, shiny modules are a god-send.
+
+The 95% of the modularized code present in this application has been shamelessly stolen from the [esquisse]( https://github.com/dreamRs/esquisse/blob/master/R/module-filterDF.R) package, mostly because I was unable to install the package through the MTU fire-wall. To get started with shiny modules it is recommended to read the page linked above and dig into the code. While it may not be necessary to read the entire esquisse code base to start using and abusing their modules, the way nonstandard evaluation is employed, especially to dynamically generate the dplyr and base R code outputs on the fly, is very clever and certainly worth a read on a slow day at work. For further discussion please refer to the more technical function documentation down the line.
+
+### Vectorization
+
+To perform logical checks and arithmetic in an efficient manner, most operations are vectorized. Since R's default way of processing includes both [Argument Recycling](https://www.dummies.com/programming/r/how-to-recycle-arguments-in-r/) and [Vectorized Operations](https://bookdown.org/rdpeng/rprogdatascience/vectorized-operations.html]) this comes with the added benefit of reducing the amount of loops that have to be used to write program code in R, thus enhancing readability in most cases. Another very powerful tool to avoid loops is the [apply family](https://www.datacamp.com/community/tutorials/r-tutorial-apply-family) of functions. The performance differences of `apply` compared to `for` loops are marginal, thus choosing between which to use is more a stylistic choice than anything else. But vectorization should be used whenever possible since runtime differences can be of several orders of magnitude in such cases. Another useful rule of thumb is to avoid growing objects in loops as most R objects have [copy-on-modify](http://adv-r.had.co.nz/Functions.html) semantics. This causes growing objects generally to be much slower than creating an empty object of the correct length before initializing the loop, and then filling up this empty container within the loop. This, however, cannot be realized in every case. 
+
+### Non-Standard evaluation
+
+A trick that is mostly used to construct dynamic user interface elements for NRA-T is [non-standard evaluation](http://adv-r.had.co.nz/Computing-on-the-language.html). This is much more powerful than realized here and can be used to compute directly on the language and perform what is called "meta programming". If we, for example, take a look at the `inspectiondata` reactive value in the `server` function of `app.R` we will find the following snippet:  
+`call <- paste0("input$inspection", i)`  
+`mat[i,1] <- eval(parse(text = call))`  
+Here a call is pasted together to be evaluated at a later time. Usually one would use `quote` for such purposes, but the exact amount of user defined inspections is not known to the program until execution thus the name of the call to be quoted has to be glued together on the fly. This "quick and dirty" way is used every time dynamic UI elements have to be evaluated. 
+
+### List Processing and Recursion
+
+Another very practical feature of the R programming language is the convenient handling of list inputs and doing efficient list processing. This is used whenever the lengths or types of returned objects are not known prior to the execution, or when the names of user interface elements are based on the formals of other functions. Take for example:  
+`# list processing magic to get the structure needed for do.call`  
+`tmp <- c(n = amnt, sapply(args, `[[`, 1))`  
+`lst <- lapply(split(tmp, names(tmp)), unname)`  
+`ret <- do.call(call, lst)`  
+This may seem confusing at first, but the snippet shown above is used in the function `gen_age_influx` and uses the `[[` function mixed with two calls from the `apply` family to obtain the list structure needed for the usage of `do.call`. 
+In general, list processing in R is not required to do anything, as other more rigid data structures can serve to do the same things just fine, but the user should keep in mind that even basic `data.frames` are technically forms of lists. The deeper one delves into the depths of functional R, the more convenient it might be to solve structure problems through list processing. A large part of Rs object orientet systems, namely the S3 and S4 systems are also based around predefined objects of a fixed composition. In all but the simplest of cases these will be expressed as data.frames or, more commonly, lists.  
+Another brilliant use of lists in R is to use them as an alternative to looping in cases where the number of iterations may not be known prior to executing the loop. In general, `while` or `do` would be up to the task, but a personal dislike for indexing and a preference for `for` had the author avoid while loops at all costs. This may sound unimportant, but all recursive functions are structured according to the following recipe:
+
+```{r, fullrecursive, eval = FALSE}
+# print nested list to console
+catnestedlist <- function(list) {
+  if (depth(list) == 1) {
+    return(catlist(list))
+  } else {
+    catlist(list[[1]])
+    Recall(list[[-1]])
+  }
+}
+
+# print non nested list to console
+catlist <- function(list) {
+  if (length(list) == 1) {
+    cat(unlist(list), "\n")
+  } else {
+    cat(unlist(list[1]), "\n")
+    Recall(list[-1])
+  }
+}
+
+# helper function to decide if list is nested or not
+depth <- function(list, depth = 0) {
+  if (!is.list(list)) {
+    return(depth)
+  }
+  max(unlist(lapply(list, depth, depth = depth + 1)))
+}
+```
+
+Imagine being challenged with the task of printing the contents of a nested list of unknown structure to the console line by line. But because your boss likes crisp code and has a knack for recursion he demands all features to be implemented without loops. The three functions in the chunk above tackle this problem and, as it turns out, avoid indexes and loops alltogether. `catnestedlist` is the first wrapper for catlist and checks the depth (*not* the length) of a list. If the depth of the inputlist is equal to 1, e.g. the input list does not contain another list of its own, then the list is passed to `catlist`. If the inputlist that was handed to `catnestedlist` contains a list, (has a depth of 2 or more) then the first element of the inputlist is handed over to `catlist`, while the list itself is recursively handed to `catnestedlist` without the first element. It would be smarter to make sure that `list[[1]]` is itself not nested, but these functions are *listed* here only to highlight the way the author uses recursion. Usually one should avoid nesting recursion as deeply as is here demonstrated however, since both the callstack size and debugging can get in the way of actually handling such code, even if the code itself looks very concise at first glance. An example of recursion being applied in a non nauseating manner can be found in `listproduct` in the **Functions** section.
+
+# Structure of the Program
+
+This section introduces the `bands` object that is used by the underlying simulation and most of the functions described in _Function Documentation_, as well as the `Server`, `ui` ,and `Simulation` parts of NRA-T. After finishing this chapter, the user should have a general understanding of the structure of the program paired with the communication between `server` and `ui`.
+
+## The `bands` Object
+
+The `bands`, or sometimes referred  to as `bnds`, object is the heart and soul of the simulation. At it's very core it is just a table made up of four columns containing the data relevant to the simulation, that is generated, based on the  suspension vector data supplied by the user, by the function `get_hbands`. It also has a `simple` attribute that is either `TRUE` or `FALSE` depending on if the suspension data is aggregated into hour bands or not. This aggregation into bands of 50 or rather 100 hours each is the main reason the object is called `bands`. A simple `bands` object may look like this:  
+
+```{r , echo=FALSE, fig.cap="**Fig. 10**: The tablelike `bands` object", out.width = '80%'}
+# knitr::include_graphics("thebandsobject.png")
+```
+
+Here the `bands` table has been generated from a simple vector of example data. The default inspection matrix of `Inf, 0` has been used to simulate no inspections being conducted and a `simple` argument of `TRUE` has been used to avoid aggregation of the data. For an example of an aggregated `bands` object see figure 11. 
+
+```{r , echo=FALSE, fig.cap="**Fig. 11**: The aggregated or 'non-simple' version of the `bands` object", out.width = '80%'}
+# knitr::include_graphics("thebandsobjectagg.png")
+```
+
+In the non-simple case the entries are rounded based on defaults given in the `get_hbands` function. The starkest difference to the simple `bands` table is that, even though we are now dealing with 21 entries ranging from 0 to 500, the table itself now has only 6 rows. That is where the column names come into play. `hband` is equal to the current age of the engine or engines in that specific row. This age is updated monthly as the engine progresses through the simulation and can be modified by inspections. In the simple case all `amount` values will be equal to 1 since every row contains only one entry. In the aggregated case the `amount` values will be equal to the amount of engines in the given hour band (row). `htotal` refers to the total age of the engine and thus will accumulate the hours that the engines accumulates every month. In turn `htotal` is not modified by _influx_, _removal_, or _inspections_ and can be used by the logical checks and sorting measures needed to make these routines work without error. `inspi` is equal to the current inspection interval the engines reside in. The default case of no inspections being undertaken is defined as a single inspection being done after an infinite (`Inf`) number of hours, consequently all entries of the `inspi` vector will be set to 1. 
+All operations performed on the `bands` object are explained in the _Function Documentation_. For further understanding it is very useful to keep the tablelike structure of it in mind. 
+
+## Server
+
+Both `ui` and `server` are structured very similarly. They are both divided into subsections as noted by the `# Marker ====` markers. RStudio allows the programmer to click on the triangle shaped flags left to these markers to open and collapse one subsection at a time, making it possible to digest the code chunk by chunk. Every chunk in `server` handles the needed reactive values and/or generation of UI elements independently of other chunks within `server`. This perhaps bloats the program a little bit, but causes a lot less mental exhaustion when trying to understand what is going on. Such a modular design also allows for simpler debugging and the addition of future features. 
+
+### Datasim
+
+Datasim parses all given input values and tries to catch all common exceptions. It also initializes the `simulation` reactively, in order to keep the results and diagnostic plots updated. Datasim itself is a reactive list and is used by other parts of the server to generate output objects. 
+
+### Dataremovals
+
+Dataremovals works in a similar fashion. Dataremovals, too, is a reactive list that is used by `rem densplt` and `rem weightsplt` to verify that all files related to the removal process were input correctly. 
+
+### rem densplt
+
+This chunk is the first to return a proper output that is rendered in `ui`. It uses data contained in `dataremovals` to build a plot of the kernel density estimate of supplied data.
+
+### rem weightsplt
+
+Almost equal to `rem densplt`, this chunk generates another plot. It, too, uses data contained in `dataremovals` to build a plot of the sampling weights attributed to every engine for the removal process. 
+
+### Simout
+
+`Simout` is perhaps the simplest chunk. It generates all text and diagnostic outputs related to `simulation`.
+
+### veriftable
+
+`Veriftable` should be renamed in the future as it generates not only the verification table and histograms of fleet and failure inputs used in the _Data Input_ panel but also handles the generation of the Weibull plots displayed in the _Parameter Estimation_ panel. The parameter estimation plot is the only point where the failure data is actually required for the program to run. As noted in the new Weibull handbook, this is not quite correct as the failure cases should be included in the error estimation. This will be fixed at a later point. 
+
+### Inspections
+
+As the name might suggest, `Inspections` handles everything related to the inspection process. The first two output elements are UI values generated dynamically based on the number of inputs that has been specified by the user in through the UI. The names of these elements are pasted together from a prefix and a number dependent on the number of inputs. Because the exact number of elements that is being generated is unknown to the programmer prior to execution, these elements must later be evaluated in `inspectiondata` via [Non-standard evaluation -- Advanced R](https://adv-r.hadley.nz/evaluation.html) This may seem obscure at first but is a routine used for the evaluation of all dynamic UI elements. The most important parts are highlighted in the following chunk.
+
+```{r, eval = F}
+# generating user input elements based on input$ninspections
+output$inspectionUI1 <- renderUI({
+    if (input$inspectyesno == F) {return(NULL)}
+    numberinputs <- as.integer(input$ninspections)
+    ### general routine to generate arbitrary number of named UI elements 
+    lapply(1:numberinputs, function(i) {
+      ### naming the elements with a prefix and a number
+      numericInput(paste0("inspection", i), paste0("Inspection Time ", i),
+                   min = 0, max = 100000, value = 1000, step = 1, width = NULL)
+    })
+  })
+
+# evaluating elements based on prefix-number combination
+  inspectiondata <- reactive({
+    if (input$inspectyesno == F) {
+      mat <- NULL
+    } else {
+    numberinputs <- as.integer(input$ninspections)
+    mat <- matrix(nrow = input$ninspections, ncol = 2)
+      ### using non-standard evaluation in a loop to access UI values
+      for (i in 1:numberinputs) {
+        ### building call based on prefix and number
+        call <- paste0("input$inspection", i)
+        ### evaluating call to store input value in matrix
+        mat[i,1] <- eval(parse(text = call))
+        ### repeating procedure for probabilities of detection
+        call <- paste0("input$pod", i)
+        mat[i,2] <- eval(parse(text = call))
+      }
+    }
+    ...
+```
+
+
+### DynamicInfluxUI
+
+`DynamicInfluxUI` wraps the standard procedure for dynamic ui generation on the fly in a switch statement to handle a slightly more challenging case, as the sampling of influx ages is based on three distinct cases, of which only one explicitly requires the evaluation of dynamically generated input values. More on that in _Function Documentation_.
+Because switch statements are used for the UI of NRA-T on more than one occasion, a [refresher](https://stackoverflow.com/questions/10393508/how-to-use-the-switch-statement-in-r-functions) on how they work might be helpful. 
+
+### Influx Data and Output
+
+This part of the Server handles the preprocessing of inputdata through a call to `scan`, the same way the suspension and failure data are being imported. The resulting list is then passed to `simulation`. Similarly, the `datainflux` reactive value constructs a list containing all parameters necessary to account for influx cases in simulation. In total `doinflux` is a `TRUE` or `FALSE` value passed directly from the corresponding UI element, `influxelps` is a list itself, that is being passed to `get_influx_age` through `simulation`; `influxamounts` is another processed vector input defined by the user that specifies the amounts of engines to be added to the fleet every month as outlined in the _Influx_ section of _General Use_, and `influxmethod` is the method chosen to perform the sampling of ages for the inflowing engines.
+
+### Debugging
+
+The `Debugging` chunk is a placeholder for the debugging of newly added features. Currently, it serves to return the first five entries of the resulting fleet table to let the user get a quick glance at the fleet after the simulation has been carried out. 
+
+## UI
+
+Complementary to the structure of `server`, `ui` is also built in different chunks that are mostly independent of each other. As mentioned in chapter 1, NRA-T is split into different tab-panels. `ui` manages the general layout of these panels as well as the naming of most input objects. Only in places where dynamic UI elements are necessary are they generated in `server` and then passed to `ui`.  
+The `Refresh!` buttons used extensively throughout the UI must be pressed to update the simulation after inputs have changed. They may be swapped out for action buttons later on. 
+
+### Data I/O
+
+Very straightforward. The two file input elements for failure and suspension data are built on the side panel, the resulting plots are then rendered on the main panel. `side panel` refers to the panel on the leftmost side of the page, `main panel` refers to the large canvas in the middle and right side of the page. 
+
+### Removal I/O
+
+Two check boxes and two conditional panels dependent on these check boxes are laid out on the side panel. The first conditional panel also lets the user define the method to generate the weights for the removal sampling process as outlined in the _Removal_ section of _General Use_. The main panel renders the estimated density plot in case removal data is present, as well as the plot visualizing the calculated removal weights for the fleet. 
+
+### Influx I/O
+
+Again, the sidebar contains a checkbox bound to a conditional panel. The conditional panel renders the necessary file input for the influx process, a select Input with all currently supported procedures for influx age distribution sampling, and the dynamic `uiOutput` generated in _Server_ based on these parameters. The main panel only displays the vector input uploaded by the user, as well as text for debugging purposes.
+
+### Parameter Estimation
+
+Here both sidebar and main panel are made of one element each, the select input to determine the type of plot to be generated from the failure data and the resulting plot.
+
+### Inspections
+
+Similar to _Influx I/O_, the sidebar here consists of a panel conditioned on a checkbox input. Because the two different sets of numeric inputs for the hour values for inspections and the matching probabilities of detection have to be set individually, the UI outputs generated in _Server_ for this purpose are split up into sidebar and main panel. 
+
+### Simulation
+
+The sidebar panel here features a checkbox to let the user choose which method for error estimation should be performed, paired with all numeric inputs needed to run the simulation. The main panel features numeric error estimates for the error count present in the fleet prior to simulating the runtime and the same estimate for the fleet after the simulation is done. (These are discussed in detail in section _Error Calculations_ of _Methodological Background_.) 
+
+### Diagnostics
+
+The diagnostics sidebar currently is a decoy to distract the observant user. (It currently serves no purpose.) In the future the user will be able to switch between different diagnostic plots and also download them as `.png` images.
+
+## Simulation
+
+`Simulation` is the wrapper to end all wrappers. Only the app itself encompasses `simulation` and passes all arguments necessary to it. The function itself is broken up into three parts. The preprocessing, in which all operations needed for the monthly loop are undertaken; the monthly loop, in which all repeated tasks are carried out and the finalization of values to be returned to the app. As of 10.09.2019 `simulation` looks like the following: 
+
+```{r, eval = F}
+simulation <- function(hmonth = 150, errorfreeperiod = 0, nmonths = 1, nweibull = 100,
+                       beta = 2.51, theta = 14400, simple = TRUE, suspensions, fast = T,
+                       removaldist, removalamnts, removalmethod, removaltype, 
+                       removeyesno = T, inspectionmatrix, doinflux, influxelps, 
+                       influxamounts, influxmethod, ...) {
+  # initial data processing
+  suspensions <- sort(suspensions)
+  bnds <- get_hbands(suspensions, simp = simple, inspectionmatrix)
+  amount <- sum(bnds[, 2, drop = FALSE])
+  original_errors <- calc_errors_fast(ssp = bnds, tht = theta, bet = beta, 
+                                      efperiod = errorfreeperiod)
+  monthly_errors <- numeric(length = nmonths)
+  monthly_rel_errors <- numeric(length = nmonths)
+  tmp <- bnds
+  removal_amounts <- prep_amounts(suspensions, removalamnts, nmonths, 
+                                  doremoval = removeyesno)
+  fleetcount <- numeric(length = nmonths + 1)
+  fleetcount[1] <- nrow(tmp)
+  influxamountvector <- prep_influxvector(influxamounts, nmonths, doinflux)
+  # loop to calculate monthly errors (basic outline)
+  for (i in 1:nmonths) {
+    amount <- sum(tmp[, 2, drop = FALSE])
+    if (fast == T) {
+      initial_errors <- calc_errors_fast(ssp = tmp, tht = theta, bet = beta, 
+                                         efperiod = errorfreeperiod)
+      aged_fleet <- inspect_engines_pod(bands = tmp, hmonthly = hmonth, 
+                                        insmatrix = inspectionmatrix)
+      aged_errors <- calc_errors_fast(ssp = aged_fleet, tht = theta, bet = beta, 
+                                      efperiod = errorfreeperiod)
+      rel_errors <- aged_errors/amount
+    } else {
+      initial_errors <- calc_errors(nweib = nweibull, amnt = amount, ssp = tmp,
+                                    tht = theta, bet = beta, 
+                                    efperiod = errorfreeperiod)
+      aged_fleet <- inspect_engines_pod(bands = tmp, hmonthly = hmonth, 
+                                        insmatrix = inspectionmatrix)
+      aged_errors <- calc_errors(nweib = nweibull, amnt = amount, 
+                                 ssp = aged_fleet, tht = theta, 
+                                 bet = beta, efperiod = errorfreeperiod)
+      rel_errors <- aged_errors/amount
+    }
+    monthly_errors[i] <- aged_errors - initial_errors
+    monthly_rel_errors[i] <- rel_errors
+    # set monthly errors that have negative entries to 0
+    tmp <- inspect_engines_pod(bands = tmp, hmonthly = hmonth, 
+                               insmatrix = inspectionmatrix)
+    monthly_influx_vector <- get_influx_age(influxamountvector[i], 
+                                            influxmethod, influxelps)
+    tmp <- add_influx(tmp, monthly_influx_vector, inspectionmatrix)
+    tmp <- remove_engines(tmp, rem = removaldist, density = removalmethod,
+                          type = removaltype, amnt = removal_amounts[i], 
+                          insmatrix = inspectionmatrix)
+    fleetcount[i + 1] <- nrow(tmp)
+  }
+  # Generate values to be returned to the app
+  total_errors <- sum(monthly_errors)
+  # generating plot of errors over time
+  df <- data.frame(month = 1:nmonths, Cumulative = cumsum(monthly_errors), 
+                   Monthly = monthly_errors)
+  errorplot <- plt_errors(df)
+  fleetplot <- plt_fleet(fleetcount)
+  relerrorplot <- plt_relerrors(monthly_rel_errors)
+  resfleet <- tmp
+  return(list(original_errors, total_errors, errorplot, fleetplot, relerrorplot,
+              resfleet))
+}
+```
+
+
+# Function Documentation
+
+This section covers **how** the ideas discussed earlier have been implemented in depth. The reader should have a strong grasp on R and understand **why** the algorithms described are used. While the workhorse functions and complex concepts are described in detail, most of the wrapper functions and higher level functions are not. 
+
+## List of Functions
+
+All currently implemented functions: 
+```{r, listoffunctions, eval = TRUE, echo = FALSE}
+rm(list = ls())
+source("functions.R")
+ls()
+```
+
+## List of variable names
+
+All currently used variable names: 
+```{r, listofvariables, eval = TRUE, echo = FALSE}
+rm(list = ls())
+source("functions.R")
+# ls()
+x <- sapply(ls(), formals)
+names <- names(sapply(x, `[[`, 1))
+forms <- sapply(names, formals)
+formals <- list()
+for (i in seq_along(forms)) {
+  formals[[i]] <- forms[[i]]
+}
+y <- unique(names(unlist(formals)))
+y[y != "..."]
+```
+A discussion of input names can be found in the coments of `app.R` most variable names
+are used consistently (e.g. refer to the same concept throughout the entire program), so
+looking up the documentation of functions below should be sufficient to understand their 
+use. 
+
+## get_hbands
+Function to be called after the data is loaded. Initializes the data.frame the rest 
+of the app works with. 
+Generates Stundenbaender and amounts of engines in each band based on the suspension 
+input 'susps'. Has to be given with no default. 'simple' determines the calculation 
+that will be carried out. In the simple case every single suspension will count 
+as a full hband. `get_hbands` will return a data.frame with every suspension in its
+own row with '1' as the amount for every 0-hour-band. In the nonsimple case 
+`get_hbands` will round the all suspension values larger than 50 to the corresponding
+100 hour bands (`round(fiftyplus, digits = -2)`) and set all values lower than 50 
+equal to 50.  
+The argument 'nms' simply modifies the column names of the returned data.frame.
+'interval' defines the inspection intervals that are used to index every suspension 
+according to the initial age given in susps. ret$total is here created as a copy
+of hband so later operations can modify the total hour count of the hband without
+changing the hour count in the current inspection interval.
+The function also marks the returned data.frame with an attribute `simple` that 
+serves to make logical checks in other functions a lot easier and decreases the 
+total amount of arguments that need to be passed from function to function.
+`get_hbands` will also return a `bnds` object of length 0 if the suspensions 
+supplied to the function are of length 0 e.g. if the fleet has reached 0 population
+through removals and would have to be repopulated through influx.
+23.08.2019 As of today `get_hbands` uses `get_intervals` to check in which inspection
+interval every engine currently resides. For more information check: `calc_interv_amnts`
+and `calc_interv_vect`.
+```{r get_hbands, eval=FALSE}
+get_hbands <- function(susps, simp = T, insmatrix, nms = c("hband", "amount", "htotal" ,"inspi")) {
+  if (length(susps) == 0 | is.null(susps)) {
+    ret <- data.frame(matrix(ncol = 4, nrow = 0))
+    colnames(ret) <- nms
+    attributes(ret) <- c(attributes(ret), simple = simp) # for disaggregation
+    return(ret)
+  }
+  if (is.data.frame(susps)) {
+    tmp <- as.vector(t(susps))
+  } else {
+    tmp <- susps
+  }
+  if (simp) {
+    ret <- data.frame(tmp)
+    ret$amount <- 1
+  } else {
+    fiftyplus <- tmp[tmp > 50]
+    ret <- numeric()
+    ret[1:length(tmp[tmp <= 50])] <- 50
+    if (!is_empty(fiftyplus)) { # exception handling in case all susps are < 50
+      ret[(length(tmp[tmp <= 50]) + 1):length(tmp)] <- round(fiftyplus, digits = -2)
+    }
+    ret <- plyr::count(ret)
+  }
+  ret$htotal <- ret[, 1]
+  # find out what inspection interval the suspensions are in
+  # insmatrix must not have nrow smaller than 1
+  ret$inspi <- get_intervals(ret$htotal, insmatrix)
+  names(ret) <- nms
+  attributes(ret) <- c(attributes(ret), simple = simp) # for disaggregation
+  return(ret)
+}
+```
+## pltmbm
+Plots micro benchmark results in box plots without the ridiculous outlier whiskers
+the autoplot function fabricates. Takes a micro benchmark object as input with no 
+default. Utilizes `reshape::melt` to generate a box plot with dynamic y limit through 
+ggplot2. 'zoom' is a scaling factor to determine the y limits for the box plot. 1 
+seems like a reasonable default.
+```{r pltmbm, eval=FALSE}
+pltmbm <- function(mbm, zoom = 1, sci = TRUE) {
+  molten <- reshape::melt(mbm) %>% dplyr::select(-variable)
+  plt <- ggplot(molten, aes(x = expr, y = value)) +
+    geom_boxplot() +
+    coord_cartesian(ylim = (boxplot.stats(molten$value)$stats[c(1, 5)]) * zoom) +
+    xlab("Function Calls") +
+    ylab(paste("Elapsed Time (in ns)", sep = "")) +
+    if (!sci) {scale_y_continuous(labels = scales::comma)}
+  return(plt)
+}
+
+```
+## calc_errors
+Vectorized implementation of the first nested while loop of the original version.
+Utilizes R's builtin automatic repetition of arguments (`recycling`) to remove one loop in its
+entirety. Decreases calculation time by more than 700 ms per call for `amnt` = 1000 (1000 engines).
+Also respects the user defined error free period. Returns total amount of errors in every month.
+```{r firstloop, eval=F}
+calc_errors <- function(nweib, amnt, ssp, bet, tht, efperiod) {
+  erroriter <- numeric(length = nweib) 
+  avgerrors <- numeric(length = amnt)
+  for (j in 1:amnt) {
+    susp_line <- ssp$hband[j]
+    weibull <- rweibull(nweib, shape = bet, scale = tht)
+    erroriter <- as.numeric((susp_line - weibull) > 0)
+    total <- sum(erroriter)
+    avgerrors[j] <- total / nweib
+  }
+  check <- ssp$htotal < efperiod
+  avgerrors[check] <- 0
+  gesamtfehler <- sum(avgerrors) 
+  return(gesamtfehler)
+}
+```
+
+## calc_errors_fast
+Exact implementation of the vectorized Weibull-error estimation in `calc_errors`.
+Under the assumption of an infinite number of Weibull draws in `calc_errors` both 
+functions return the same result. What `calc_errors` is doing is a form of Monte
+Carlo integration. `calc_errors_fast` uses `pweibull` to return exact results near 
+instantly. Thus, the runtime of `calc_errors_fast` increases linearly with the amount
+of suspensions. The only "Problem" is that this leads to deterministic results --
+`simulation` will always return the same result for the same inputs of `calc_errors_fast`.
+Thus, other non deterministic methods are required to simulate multiple outcomes.
+```{r, eval = F}
+calc_errors_fast <- function(ssp, bet, tht, efperiod) {
+  avgerrors <- pweibull(ssp$hband, shape = bet, scale = tht)
+  check <- ssp$htotal < efperiod
+  avgerrors[check] <- 0
+  gesamtfehler <- sum(avgerrors)
+  return(gesamtfehler)
+}
+```
+
+
+## disaggregate_hbands
+A helper function to assist in solving the problem of removing the oldest n engines
+every month. It takes a table that has been generated with the function `get_hbands`
+as input and returns a disaggregated table of the same class. This function is currently
+not needed, as `bands` objects are disaggregated by default. 
+```{r, eval=F}
+disaggregate_hbands <- function(hbands) {
+  tmp <- rep(hbands$hband, times = hbands$amount)
+  ins <- rep(hbands$inspi, times = hbands$amount)
+  tot <- rep(hbands$htotal, times = hbands$amount)
+  ret <- data.frame(tmp, 1, ins, tot)
+  names(ret) <- names(hbands)
+  return(ret)
+}
+```
+## inspect_engines
+A function to do 3 things in one call: 1. Calculate the total service hours of 
+every suspension. 2. Check which suspensions have been inspected and adjust their 
+inspection counter accordingly. 3. Reset the hband entries for inspected suspensions
+to the correct amount >= 0 .  
+`inspect_engines()` takes a bands object and values for monthly flight hours and the
+number of hours between every inspection as inputs with no defaults. These values 
+will be supplied by the environment in which the function will operate in; e.g. 
+the main loop. Note: This implementation is currently bugged. (14.08.2019);
+`inspect_engines_pod` builds on this implementation. 
+```{r, eval = F}
+inspect_engines <- function(bands, hmonthly, hinterval, ninspections = 4) {
+  htotaltmp <- bands$htotal + hmonthly
+  inspitmp <- floor(htotaltmp / hinterval)
+  check <- ((inspitmp > bands$inspi) & (bands$inspi < ninspections))
+  bands$hband[check] <- bands$hband[check] + hmonthly - hinterval
+  bands$hband[!check] <- bands$hband[!check] + hmonthly
+  bands$htotal <- htotaltmp
+  bands$inspi[check] <- bands$inspi[check] + 1
+  return(bands)
+}
+```
+
+## gen_age
+`gen_age` serves to generate a vector of ages to streamline the simulation of 
+the influx of monthly new engines. In case the ages are constant only `age` and
+`draws` are required as default parameters. In case ages should be drawn from a 
+distribution one has to specify the `distr` argument like "norm", "unif", "pois", ...
+Also requires inputs in `...` for the specified distribution, e.g. "mean" and "sd"
+for `rnorm`. In case negative ages are generated the function coerces all occurrences 
+of negative ages to the value specified in `neg.default`. If `distr == ""` is 
+not true the else clause handles all kinds of distribution sampling thanks to the 
+arguments that are given in the `elps` argument. This requires some functional 
+R programming particularities to be able to handle an entire list of arguments 
+that are being supplied by the `...` argument of `simulation`. Check the documentation
+of `formals` and `do.call` for information on why this works.  
+Note: This function is deprecated, currently `gen_age_influx` is the active version. 
+```{r, eval = F}
+gen_age <- function(age = 0, distr = c(""), draws, neg.default = 0, elps = list()){
+  if (distr == "") {
+    ret <- rep.int(age, times = draws)
+  } else {
+    call <- paste("r", distr, sep = "")
+    forms <- formals(call)
+    check <- names(elps) %in% names(forms)
+    args <- elps[check]
+    ret <- do.call(call, list(draws, unlist(args)))
+    ret <- round(ret)
+    if (sum(ret < 0) != 0) {
+      warning(paste0("Negative ages generated. Coercing to ", neg.default,
+                    ". Check documentation of `gen_age()`."))
+      check <- ret < 0
+      ret[check] <- neg.default
+    }
+  }
+  return(ret)
+}
+```
+## add_influx
+`add_influx` binds `tmp`, an `hbands` like table that is created from an age vector 
+as generated by `gen_age` to the given `bnds` table. Does _not_ sort the result. 
+In general sorting is needed because the vector values in every column of the `bands`
+object can only be calculated correctly if the table is sorted according to the values 
+in the `hband` column. More specifically, the calculation of the inspection intervals 
+depend on sorted vectors. As a result, `add_influx` as it is here is deprecated. 
+```{r, eval = F}
+add_influx <- function(bnds, age = rep.int(0, 5), inspintervall) {
+  tmp <- get_hbands(age, interval = inspintervall, simp = attributes(bnds)$simple)
+  ret <- rbind(tmp, bnds)
+  return(ret)
+}
+```
+## rem_oldest
+`rem_oldest` removes the oldest n suspensions from a `hbnds` table. The amount can 
+be specified with `amnt`, the argument `total` further specifies what row should 
+serve to remove the oldest engines. Defaults to `htotal` -- the total age of the 
+suspensions. Currently not in use as this step is being taken care of in the more 
+general approach for removal sampling later on. 
+```{r, eval = F}
+rem_oldest <- function(bnds, amnt = 10, total = T) {
+  if (attributes(bnds)$simple == FALSE) {
+    bnds <- disaggregate_hbands(bnds) 
+  }
+  if (total) {
+    ret <- sort.data.frame(bnds, by = "htotal")
+    ret <- ret[1:(nrow(ret) - amnt),]
+  } else {
+    ret <- sort.data.frame(bnds, by = "hband")
+    ret <- ret[1:(nrow(ret) - amnt),]
+  }
+  return(ret)
+}
+```
+
+## disagg
+`disagg` serves as a helper function to handle aggregated data inputs. This one, 
+however, does not return an `hband` object, but is used as a low level helper to 
+return a vector that is needed to use `get_hbands`.
+```{r, eval = F}
+disagg <- function(table) {
+  outvec <- NULL
+  for (line in 1:nrow(table)) {
+    outvec <- c(outvec, rep(table$hband[line], table$amount[line]))
+  }
+  outvec
+}
+```
+
+## age_fleet
+`age_fleet` is a helper function to correctly calculate the error delta between
+every month. It returns an `hband` object with modified hour values, so the error
+differences between the current month and a hypothetical next month without influx
+or removal can be calculated.
+```{r, eval = F}
+age_fleet <- function(bnds, hrs) {
+  ret <- bnds
+  ret$hband <- ret$hband + hrs
+  return(ret)
+}
+```
+
+## plt_errors
+`plt_errors` produces the first diagnostic plot for the diagnostics page. 
+This plot visualizes both cumulative and monthly errors. For it a data frame `df`
+is created in `simulation`.
+```{r, eval = F}
+plt_errors <- function(df) {
+  mlt <- melt(df, id.vars = "month")
+  names(mlt) <- c("Month", "Errors", "value")
+  plt <- ggplot(data = mlt, aes(x = Month, y = value, group = Errors, col = Errors)) +
+    geom_line(size = 1.25) +
+    geom_point(color = "black") +
+    ggtitle("Errors: Cumulative & Monthly") +
+    ylab("Errors") +
+    xlab("Months") +
+    theme(plot.subtitle = element_text(vjust = 1),
+          plot.caption = element_text(vjust = 1),
+          axis.title = element_text(size = 12, face = "bold"),
+          plot.title = element_text(size = 14, face = "bold"),
+          panel.background = element_rect(fill = "aliceblue"),
+          panel.grid.major = element_line(colour = "black"),
+          panel.grid.minor = element_line(colour = "black"))
+  return(plt)
+}
+```
+
+## gen_smp_weights
+`gen_smp_weights` takes a vector of known prior removal data as input to calculate
+weights that are used in `remove_sample`. The Idea is, that engines should be chosen 
+for inspection/removal according to a distribution that is estimated on prior 
+experience, (the vector of past removal data) because just choosing them uniformly
+would disregard the underlying structure of the maintenance  procedure. E.g. if 
+high infant mortality is a known failure mode the engines that are removed for 
+maintenance will be chosen according to a right skewed distribution. 
+Thus, given that a vector of removaldata is supplied, `gen_smp_weights` scales 
+both suspension and removal data with a Z-transform and calculates a weight for 
+every suspension according to the method chosen by the user. Here the argument 
+`density` allows the user to specify if the weights are chosen by approximate 
+density values or by the approximated area under the curve (probability weights).
+The latter, of course, assigns high weights to data that contains higher hour counts 
+than the removal data, so this procedure is not recommended for cases where
+_only_ infant mortality is being monitored. As a first step it seems reasonable however,
+to assume that older engines are more likely to be removed from the fleet for 
+maintenance. The function also uses lapply to avoid loops and enhance readability.
+For more information see:
+[AUC for Density](https://stats.stackexchange.com/questions/78711/how-to-find-estimate-probability-density-function-from-density-function-in-r) and 
+[Nested list accessing](https://stackoverflow.com/questions/13016359/how-to-directly-select-the-same-column-from-all-nested-lists-within-a-list)  
+In the case of no removal data being available, it is also possible to assign 
+weights to the suspension data based on the density and empirical cumulative
+distribution function of the suspension data itself. For this purpose the `type`
+must be given, then the weights are calculated based on the rescaled suspension data.  
+See _?scales::rescale_ for further information. In the exeptional case of only one
+or zero suspensions being left in the fleet weighted sampling does not make sense 
+anymore. (The function `scale` would return `NaN` in these cases anyway.) Thus 
+the return value will be set to `NULL`.
+```{r, eval = F}
+gen_smp_weights <- function(ssp, rem = NULL, density = T, type = c("dnorm", "pnorm", "dunif", "punif")) {
+  if (length(ssp) <= 1) {
+    return(NULL)
+  }
+  if (!is.null(rem)) {
+    dens <- density(scale(rem))
+    scaledsus <- scale(ssp)
+    scaledsus[scaledsus < min(dens$x)] <- min(dens$x)
+    scaledsus[scaledsus > max(dens$x)] <- max(dens$x)
+    dfun <- approxfun(dens)
+    fun <- function(a) {
+      integrate(dfun, lower = min(dens$x), upper = a)
+    }
+    if (density == T) {
+      tmp <- lapply(scaledsus, FUN = dfun)
+    } else {
+      tmp <- lapply(scaledsus, FUN = fun)
+    }
+    weights <- unlist(lapply(tmp, `[[`, 1))
+  } else {
+    weights <- switch(type,
+      "dnorm" = {
+        dnorm(scale(ssp))
+      },
+      "pnorm" = {
+        pnorm(scale(ssp))
+      },
+      "dunif" = {
+        dunif(scales::rescale(ssp, to = c(0, 1)))
+      },
+      "punif" = {
+        punif(scales::rescale(ssp, to = c(0, 1)))
+      }, {
+        print("default")
+      }
+    )
+  }
+  weights <- weights + 1e-5
+  # sampling without replacement throws an error if there are weights equal to 0
+  return(weights)
+}
+```
+
+
+## remove_sample
+`remove_sample` uses weights generated by `gen_smp_weights` to remove a sample 
+of the size `amnt` from a `bnds` object generated by `get_hbands`. The function is 
+written in such a convoluted way to allow removal of the correct amount of data
+in case there are duplicate entries in the suspension data. I did not find a 
+method to do it with basic subsetting as both `match` and `%in%` lead to different,
+incorrect solutions. The while loop only runs for one iteration in case all entries
+in the sample that should be removed from the suspension data are unique. 
+The worst case scenario (all cases being the same) runs for as many iterations as
+there are entries in `smp`. For small sample sizes (low chance of having duplicate
+entries) or high entropy data (very little repeated entries) this approach should
+vastly outperform the brute force solution of removing every entry one by one.
+Also added more exception handling than might be necessary to avoid errors based
+on the outputs of other functions. 
+```{r, eval = F}
+remove_sample <- function(bnds, amnt, wgts) {
+  if (amnt == 0 | is.na(amnt)) {
+    return(bnds)
+  }
+  if (nrow(bnds) == 0 | is.null(wgts)) {
+    return(bnds)
+  } else if (nrow(bnds) != length(wgts)) {
+    return(bnds)
+  } else {
+  smp <- sample(bnds$hband, size = amnt, replace = F, prob = wgts)
+  unq <- unique(smp)
+  tmp <- bnds
+  while (length(unq) > 0) {
+    # updated to handle bnds objects like god intended
+      tmp <- tmp[-match(unq, tmp$hband),]
+      smp <- smp[-match(unq, smp)]
+      unq <- unique(smp)
+  }
+  return(tmp)
+  }
+}
+```
+
+## prep_amounts
+This function prepares a vector of amount data that is used for the removal of
+engines in the fleet based on weighted samples. In case no removal is needed 
+`prep_amounts` simply returns a numeric vector full of zeroes. Because `simulation`
+iterates over `remove_engines` the returned vector has to have at least the same 
+length as the amount of months the simulation should iterate over. In case `nmonths`
+is smaller than the length of `removalamnts` no changes to `removalamnts` are
+being made. If the total amount of engines to be removed from the fleet exceeds 
+the total amount of engines being present, a warning is issued to the console. 
+```{r, eval = F}
+prep_amounts <- function(ssp, removalamnts, nmonths, doremoval = T) {
+  if (doremoval == F) {
+    ret <- numeric(length = nmonths)
+    return(ret)
+  }
+  if (nmonths > length(removalamnts)) {
+    ret <- numeric(length = nmonths)
+    ret[1:length(removalamnts)] <- removalamnts
+    return(ret)
+  } else {
+    ret <- removalamnts
+    if (sum(removalamnts) > length(ssp)) {
+      warning("More removals than Suspensions; consider adding monthly influx.")
+    }
+  }
+  return(ret)
+}
+```
+
+## remove_engines
+A simple wrapper to streamline the removal process. This is intended to enhance
+readability of `simulation` but makes debugging and testing of the removal procedure
+a little bit less transparent. 
+```{r, eval = F}
+remove_engines <- function(bnds, rem, density = T, type, amnt, insmatrix) {
+  if (amnt > nrow(bnds)) {
+    amnt <- nrow(bnds)
+  }
+  weights <- gen_smp_weights(bnds$hband, rem, density, type)
+  ret <- remove_sample(bnds, amnt, weights)
+  return(ret)
+}
+```
+
+## plt_fleet 
+Another short wrapper to produce a modular plot of the fleet status in every 
+step of the simulation. Mostly used to test the removal procedure. As all `plt_*`
+functions, this function is subject to change later on. 
+```{r, eval = F}
+plt_fleet <- function(fleetcount) {
+  x <- 1:length(fleetcount)
+  df <- data.frame(Month = x, Fleetcount = fleetcount)
+  plt <- ggplot(df, aes(x = Month, y = Fleetcount)) +
+    geom_point()
+  return(plt)
+}
+
+```
+
+## inspect_engines_pod
+Function to carry out inspection based on the user defined `insmatrix`.
+`insmatrix` contains the hour values at which shop visits are performed in the 
+first column; and the probabilities of error detection for each shop visit in 
+the second column. `inspect_engines_pod` will only reset the hour values if the
+conditions in `tmp` apply.  
+`(bands$htotal < insmatrix[i,1]) & (htotaltmp >= insmatrix[i,1])` make sure that
+an inspection threshold has been crossed based on the total hour count; 
+`(bands$inspi <= nrow(insmatrix))` further verifies the state of the engines 
+within the inspection cycle. After all checks are performed, `get_intervals` is 
+called to adjust the `inspi` values of the modified `bands` object.  
+Refer to `get_intervals` for details.
+```{r, eval = F}
+# updated version of inspect_engines to allow for dynamic user inputs
+inspect_engines_pod <- function(bands, hmonthly, insmatrix) {
+  # exception for empty fleet
+  if (is.null(bands)) {
+    ret <- get_hbands(NULL, simp = T, insmatrix)
+    return(ret)
+  }
+  # i <- nrow(insmatrix) is the amount of inspections
+  # => check i times if the hours htotal crossed a threshold
+  check <- logical(length = nrow(bands))
+  htotaltmp <- bands$htotal + hmonthly
+  for (i in 1:nrow(insmatrix)) {
+    pod <- insmatrix[i,2]
+    # only reset hours if the TOTAL hours have crossed the threshold
+    # and if the current inspection interval is less than or equal than the
+    # total number of inspections
+    tmp <- ((bands$htotal < insmatrix[i,1]) & (htotaltmp >= insmatrix[i,1]) & (bands$inspi <= nrow(insmatrix)))
+    # get indices of the engines that crossed an inspection threshold
+    index <- which(tmp)
+    # set those entries to FALSE with a probability of 1-POD to reflect the
+    # possibility of not finding a possible early failure
+    tmp[index] <- sample(c(T, F), length(index), replace = T, prob = c(pod, 1 - pod))
+    # set all hour values where errors were found through inspection to
+    # #### This is not correct yet
+    bands$hband[tmp] <- 0 + htotaltmp[tmp] - insmatrix[i,1]
+    check <- check | tmp
+  }
+  bands$hband[!check] <- bands$hband[!check] + hmonthly
+  # set all total values to the aged total value
+  bands$htotal <- htotaltmp
+  # update the inspection interval count
+  bands$inspi <- get_intervals(bands$htotal, insmatrix)
+  return(bands)
+}
+```
+
+## get_intervals
+Wrapper that is used by `get_hbands`. Refer to `calc_interv_amnts` and  
+`calc_interv_vect` for more information.
+
+```{r, eval = F}
+get_intervals <- function(hbands, insmatrix) {
+  tmp <- insmatrix[,1]
+  intervalvect <- calc_interv_amnts(hbands, tmp)
+  ret <- calc_interv_vect(hbands, intervalvect)
+  return(ret)
+}
+```
+
+## calc_interv_amnts
+Because the exact specifications of both amounts and hour values of user defined
+inspection intervals is unknown prior to the user input, the process to calculate 
+the current inspection interval in which the suspensions reside must be executed
+recursively. `calc_interv_amnts` returns a vector of engines in every inspection 
+interval. For example: A return value of `2,7,19` is to be understood as: 2 of the
+suspended engines are _in_ the first interval, read: have not been inspected yet; 
+7 of the engines are _in_ the second interval, read: have been inspected once; 19 
+of the engines are _in_ the third interval, read: have been inspected twice.
+This function does not handle exceptions or return a vector that can be used to 
+construct the `bnds` object with `get_hbands`. This is being accomplished in 
+`calc_interv_vect`.
+```{r eval = F}
+calc_interv_amnts <- function(vect, checkagainst) {
+  ret <- numeric()
+  if (length(checkagainst) == 1) {
+    ret <- sum(floor(vect/checkagainst) == 0)
+    return(ret)
+  } else {
+    tmp <- sum(floor(vect/checkagainst[1]) == 0)
+    ret <- c(tmp, calc_interv_amnts(vect[-1:-tmp], checkagainst[-1]))
+    return(ret)
+  }
+}
+```
+
+## calc_interv_vect
+This function generates a vector of `length = length(suspensions)`. It handles 
+no intervals and also assigns engines past the time of the third inspection an 
+inspection value of `n inspections + 1`.
+The return vector is then being used by `get_hbands` to construct the `bnds` object
+the rest of the simulation works with.
+`length(ret) == 0` can only be true if the total age of every engine
+is larger than every inspection interval e.g. if no more inspections are
+to be carried out. Thus, we set the returned vector to the maximum amount of
+inspections `(length(intervalvect)) + 1`. So the condition in
+`inspect_engines_pod` for the current inspection interval being less than
+or equal than the total number of inspections is FALSE by default and no
+more inspections are completed.
+```{r, eval = F}
+calc_interv_vect <- function(vect, intervalvect) {
+  inters <- 1:length(intervalvect)
+  ret <- rep(inters, times = intervalvect)
+  # exception in case there are no intervals
+  if (length(ret) == 0) {
+    ret <- rep((length(intervalvect) + 1), times = length(vect))
+    return(ret)
+  } else {
+    # bandaidfix in case times returns negative value
+    tms <- length(vect) - length(ret)
+    if (tms < 0) {
+      tms <- 0
+    }
+    ret <- c(ret, rep((length(intervalvect) + 1), times = tms))
+    return(ret)
+  }
+}
+```
+
+## prep_influxvector
+`prep_influxvector` takes a vector of user defined influx amounts and `nmonths` 
+as inputs and returns a vector containing an influx amount value for every month. 
+Very similar to `prep_amounts`.
+```{r, eval = F}
+prep_influxvector <- function(influxamounts, nmonths, doinflux = T) {
+  if (doinflux == F) {
+    ret <- numeric(length = nmonths)
+  } else if (nmonths > length(influxamounts)) {
+    ret <- numeric(length = nmonths)
+    ret[1:length(influxamounts)] <- influxamounts
+  } else {
+    ret <- influxamounts[1:nmonths]
+  }
+  return(ret)
+}
+```
+
+
+## get_influx_age
+This is a wrapper to handle all different possible user input choices. Most of 
+the heavy lifting is done by `switch(meth, ...)` which returns the desired 
+influx age vector based on `meth`. In the simplest case of constant ages it just
+returns a vector of length = `amnts`. Other cases like sampling from a prior 
+kernel density estimate of known influx data and generating influx ages based on
+a distribution are being handled by `sample_prior_kde` and `gen_age_influx` 
+respectively. 
+
+```{r, eval = F}
+get_influx_age <- function(amnt, meth, elps = list()) {
+  meth <- tolower(meth)
+  if (amnt == 0) {
+    return(NULL)
+  } else {
+    ret <- switch(meth,
+      "constant" = {
+        rep(elps$age, times = amnt)
+      },
+      "prior" = {
+        sample_prior_kde(elps$influxprior, amnt)
+      }, {
+        gen_age_influx(distr = meth, amnt = amnt, elps)
+      }
+    )
+  }
+  return(ret)
+}
+```
+
+
+## gen_age_influx
+This is the default case in `gen_influx_age`. Because the distribution to be 
+sampled from is specified by the user, the amount of arguments the function takes 
+is not constant. Also, because the user has to choose from a list of possible 
+distributions, the amount of arguments can be extracted based on the user specified
+distribution via `get_formals`. `get_formals` will always return a list of the 
+needed structure so that `do.call(call, lst)` executes correctly. This function 
+also avoids negative draws since negative age values are nonsensical for lifetime 
+data after shop visits. One cannot restore engine parts to negative life values. 
+Thus `gen_age_influx` gets called recursively until all values in `ret` are larger
+or equal to _0_. It is possible to reach the expression limit in R because of this
+so a later adjustment might be needed.
+
+```{r, eval = F}
+gen_age_influx <- function(distr, amnt, elps = list()) {
+  call <- paste0("r", tolower(distr))
+  forms <- formals(call)
+  check <- names(elps) %in% names(forms)
+  args <- elps[check]
+  # list processing magic to get the structure needed for `do.call`
+  tmp <- c(n = amnt, sapply(args, `[[`, 1))
+  lst <- lapply(split(tmp, names(tmp)), unname)
+  ret <- do.call(call, lst)
+  ret <- round(ret)
+  if (all(ret >= 0)) {
+    return(ret)
+  } else {
+    warning("Negative values generated in `gen_age_influx`. Consider recursionlimit.")
+    ret <- c(ret[ret >= 0], gen_age_influx(distr, length(ret[ret < 0]), elps))
+    return(ret)
+  }
+}
+```
+
+
+
+## sample_prior_kde
+Workhorse function to handle the most interesting case. If the user supplies a 
+vector of prior information about past influx lifetimes (or is just interested 
+in the analysis of what has to be expected under certain assumptions for influx
+ages) `sample_prior_kde` exploits a property of kernel `density()` estimation. 
+KDE is based on assigning every data point a distribution based on the specified
+kernel (in our case a normal distribution) with the mean being the data point 
+itself and the bandwidth being the bandwidth that has been estimated by the 
+call to `density()`. Thus all we have to do to sample from the estimated 
+distribution of known influx points, is to generate a bootstrapped list of means
+and then draw from a normal distribution with those means and the given bandwidth.  
+For more information refer to [Sampling from an estimated distribution](https://stats.stackexchange.com/questions/82797/how-to-draw-random-samples-from-a-non-parametric-estimated-distribution)  
+and [An introduction to KDE](http://www.mvstat.net/tduong/research/seminars/seminar-2001-05/)  
+In case the distribution cant be estimated reasonably by KDE other methods like 
+Importance sampling or MCMC might be necessary. 
+```{r, eval = F}
+sample_prior_kde <- function(influxprior, amount) {
+  if (length(influxprior) < 2) {return(0)}
+  bw <- density(influxprior)$bw
+  means <- sample(influxprior, 1000, replace = T)
+  smp <- round(rnorm(amount, mean = means, sd = bw))
+  if (all(smp >= 0)) {
+    return(smp)
+  } else {
+    ret <- c(smp[smp >= 0], sample_prior_kde(influxprior, length(smp[smp < 0])))
+    return(ret)
+  }
+}
+```
+
+
+
+## add_influx
+A wrapper to return the updated `bnds` object from the old fleet, an age vector 
+supplied by `get_influx_age` and the user-specified `insmatrix`.
+The sorting operations in the call to `get_hbands` and before returning `ret` 
+are necessary because of the vectorized structure of `inspect_engines_pod`.
+```{r eval = F}
+add_influx <- function(bnds, agevector, insmatrix) {
+  if (is.null(agevector)) {
+    return(bnds)
+  } else {
+    tmp <- get_hbands(sort(agevector), simp = attributes(bnds)$simple, insmatrix)
+    ret <- rbind(tmp, bnds)
+    ret <- sort.data.frame(ret, by = "htotal")
+    # check aggregation for nonsimple case
+  }
+  return(ret)
+}
+```
+
+
+
+## get_formals
+A quick and dirty function to return the list that is needed by `gen_age_influx`.
+Do not touch. In short this function:  
+
+ * Returns nothing in the constant age or prior age distribution cases  
+ * Pastes together a function call to return matching names for UI elements.  
+ * Saves the formals of this call in a list, omitting the `n` part of the formals  
+ * Evaluates the call that's been glued together above in the parent environment of `get_formals` to save the number of parameters needed for the specified  call in a list. (E.g. `mean` and `sd` for a call to `rnorm`.)  
+ * Renames the elements of this list according to their formal names.  
+ * Returns this list.  
+ 
+A list of this precise structure is needed by a call to `do.call` in another function. 
+
+```{r}
+get_formals <- function(meth) {
+  if (meth == "Constant" | meth == "Prior") {
+    return(NULL)
+  }
+  call <- paste0("r", tolower(meth))
+  # n argument is defined by amount given by user
+  forms <- formals(call)[2:length(formals(call))]
+  numberinputs <- length(forms)
+  elps <- list()
+  for (i in 1:numberinputs) {
+    elps[[i]] <- eval.parent(parse(text = paste0("input$influxformal", i)), n = 1)
+  }
+  names(elps) <- names(forms)
+  return(elps)
+}
+```
+
+## csvFileInput
+Modularized csv inputs that return data frames of a certain structure. This is a lot more convenient than manually checking the input structure every time the inputs are needed. Documentation is available [here](https://shiny.rstudio.com/articles/modules.html).
+```{r, eval = F}
+csvFileInput <- function(id, label = "CSV file") {
+  # Create a namespace function using the provided id
+  ns <- NS(id)
+  # all input or output IDs of any kind need to be wrapped in a call to ns()
+  # wrap everything in a tagList to return multiple UI elements
+  tagList(
+    fileInput(ns("file"), label),
+    checkboxInput(ns("IDyesno"), "First column ID?", value = FALSE),
+    selectInput(ns("inputSeparator"), "Separator", selected = ";",
+                choices = c(";", ","))
+  )
+}
+
+```
+
+
+## Module server function
+Corresponding modularized server side handling of csv inputs. For documentation check [this site](https://shiny.rstudio.com/articles/modules.html).
+```{r, eval = F}
+csvFile <- function(input, output, session, stringsAsFactors) {
+  userFile <- reactive({
+    # If no file is selected, don't do anything
+    validate(need(input$file, message = FALSE))
+    input$file
+  })
+
+  # parse file to data frame
+  dataframe <- reactive({
+    dta <- read.csv(userFile()$datapath,
+                    header = FALSE,
+                    stringsAsFactors = FALSE,
+                    sep = input$inputSeparator
+    )
+    if (ncol(dta) < 2) {
+      colnames(dta) <- `if`(input$IDyesno, c("Hours"), c("Hours"))
+    } else {
+      colnames(dta) <- `if`(input$IDyesno, c("ID", "Hours"), c("Hours", "ID"))
+    }
+    list(inputdata = dta)
+  })
+
+  # verify file upload
+  observe({
+    msg <- sprintf("File %s was uploaded", userFile()$name)
+    cat(msg, "\n")
+  })
+  # return the list that contains the dataframe object
+  return(dataframe)
+}
+```
+
+
+
+# Functions Copied from WeibullR
+
+The following functions have been copied directly from `WeibullR 1.0.10` the corresponding files can be found on [here](https://cran.r-project.org/src/contrib/Archive/WeibullR/).  
+The main reason they have been copied over into `functions.R` is that an update of the `WeibullR` package broke the competing modes plots. In theory one could work with `renv` or `packrat` to construct project specific libraries, but this may not work properly without Rtools. Rtools is currently (December 2019) not available on MTU internal computers, thus we do 'em dirty and just copy all functions we need in the state we needed them in. All documentation for these functions can be found in the [reference manual](https://cran.r-project.org/web/packages/WeibullR/index.html) or in the [Github repository](https://github.com/Weibull-R/WeibullR) of the [maintainter](https://github.com/jto888) of the package. 
+
+```{r, eval = F}
+# copy of a function in WeibullR that is not exported
+ExtractContoursFromObjects <- function(x) {
+  CP <- list()
+  for (obj in 1:length(x)) {
+    objCP <- getContoursFromSingleObject(x[[obj]])
+    if (obj == 1) {
+      for (li in 1:length(objCP)) {
+        CP[[li]] <- objCP[[li]]
+      }
+    } else {
+      if (names(CP[[length(CP)]]$contour[1]) != names(objCP[[1]]$contour[1])) {
+        stop("dist mismatch in contours from objects")
+      }
+      cp_num <- length(CP)
+      for (li in 1:length(objCP)) {
+        cp_num <- cp_num + 1
+        CP[[cp_num]] <- objCP[[li]]
+      }
+    }
+  }
+
+  CP
+}
+
+contourRange <- function(contour) {
+  ra <- contour
+  data.frame(range(ra[, 1]), range(ra[, 2]))
+}
+
+
+findContourRanges <- function(cplist) {
+  findrange <- function(cp) {
+    contourRange(cp$contour)
+  }
+  do.call("rbind", lapply(cplist, findrange))
+}
+
+ExtractContourParamsFromObject <- function(wblr) {
+  str_eval <- function(x) {
+    return(eval(parse(text = x)))
+  }
+  getParam <- function(par_name) {
+    val <- NULL
+    if (!is.null(str_eval(paste0("conf$options$", par_name)))) {
+      val <- str_eval(paste0("conf$options$", par_name))
+    } else {
+      if (!is.null(str_eval(paste0("fit$options$", par_name)))) {
+        val <- str_eval(paste0("fit$options$", par_name))
+      } else {
+        if (!is.null(str_eval(paste0("wblr$options$", par_name)))) {
+          val <- str_eval(paste0("wblr$options$", par_name))
+        }
+      }
+    }
+    val
+  }
+
+  # no fit exists, so get param from base object options only, perhaps defaults
+  getParam3 <- function(par_name) {
+    val <- NULL
+    if (!is.null(str_eval(paste0("wblr$options$", par_name)))) {
+      val <- str_eval(paste0("wblr$options$", par_name))
+    }
+    val
+  }
+
+
+  if (!is.null(wblr$fit)) {
+    ## a fit list exists
+    for (fit_num in 1:length(wblr$fit)) {
+      fit <- wblr$fit[[fit_num]]
+      if (!is.null(fit$conf)) {
+        for (conf_num in 1:length(fit$conf)) {
+          conf <- fit$conf[[conf_num]]
+          if (!is.null(conf$contour)) {
+            ## Yeah!, we found a contour, get parameters from here seeking back toward
+            ## base object options list if necessary.
+            dist <- getParam("dist")
+            dof <- getParam("dof")
+            col <- getParam("col")
+            lty <- getParam("lty")
+            lwd <- getParam("lwd")
+          } else {
+            # a conf exists, but not a contour, so get the params from base object options
+            # for some reason extraction getParam2 did not work here, did not want to debug further
+            dist <- getParam3("dist")
+            dof <- getParam3("dof")
+            col <- getParam3("col")
+            lty <- getParam3("lty")
+            lwd <- getParam3("lwd")
+          }
+        }
+      } else {
+        # a fit exists, but get the params from base object options
+        # for some reason extraction getParam2 did not work here, did not want to debug further
+        dist <- getParam3("dist")
+        dof <- getParam3("dof")
+        col <- getParam3("col")
+        lty <- getParam3("lty")
+        lwd <- getParam3("lwd")
+      }
+    }
+  } else {
+    # no fit exists, get the params from base object options
+    dist <- getParam3("dist")
+    dof <- getParam3("dof")
+    col <- getParam3("col")
+    lty <- getParam3("lty")
+    lwd <- getParam3("lwd")
+  }
+
+  outlist <- NULL
+  if (exists("dist")) {
+    outlist <- list(dist = dist, dof = dof, col = col, lty = lty, lwd = lwd)
+  }
+  outlist
+}
+
+CalculateContours <- function(x, CL) {
+  c2p <- list()
+  wblr_num <- 0
+  while (wblr_num < length(x)) {
+    wblr_num <- wblr_num + 1
+    params <- ExtractContourParamsFromObject(x[[wblr_num]])
+    # warn and drop any 3p suffix from params$dist
+    # this should never happen because 3p distribution specification should only appear in wblr.fit, not wblr
+    # there would be no conf in the 3p fit, so only base wblr dist option would be returned here
+    # but lets just avoid this strange case.
+    if (substr(params$dist, nchar(params$dist) - 1, nchar(params$dist)) == "3p") {
+      params$dist <- substr(params$dist, 1, nchar(params$dist) - 2)
+      warning("3p dist modification specified in wblr has been ignored")
+    }
+
+    # test for dist mismatch here
+    if (wblr_num > 1) {
+      if (c2p[[length(c2p)]]$dist != params$dist) {
+        stop("dist mismatch in entered objects")
+      }
+    }
+    fit <- unname(mlefit(x[[wblr_num]]$data$lrq_frame, dist = params$dist))
+
+    for (cl_num in 1:length(CL)) {
+      ## ptDensity could be a function of CL[cl_num]
+      ## 360 for CL=.9, 40 for CL=.1
+      dens <- ceiling(360 * CL[cl_num] / .9)
+
+      if (wblr_num == 1 && cl_num == 1) {
+        c2p_num <- 1
+      } else {
+        c2p_num <- length(c2p) + 1
+      }
+      ## usage MLEcontour(x,  dist="weibull", CL=0.9,dof=1,MLEfit=NULL, RadLimit=1e-5,
+      ## 		ptDensity=120, debias="none", show=FALSE)  {
+      c2p[[c2p_num]] <- list()
+      c2p[[c2p_num]]$contour <- MLEcontour(
+        x[[wblr_num]]$data$lrq_frame,
+        dist = params$dist,
+        CL = CL[cl_num],
+        dof = params$dof,
+        MLEfit = fit,
+        ptDensity = dens
+      )
+      c2p[[c2p_num]]$dist <- params$dist
+      c2p[[c2p_num]]$MLEpt <- fit
+      c2p[[c2p_num]]$color <- params$col
+      # check implementation of ExtractParamsFromObject here
+      c2p[[c2p_num]]$lty <- params$lty
+      c2p[[c2p_num]]$lwd <- params$lwd
+    }
+  }
+  c2p
+}
+
+getContoursFromSingleObject <- function(wblr) {
+  FOUND <- FALSE
+
+  if (!is.null(wblr$fit)) {
+    ## a fit list exists
+
+    for (fit_num in 1:length(wblr$fit)) {
+      fit <- wblr$fit[[fit_num]]
+      if (!is.null(fit$conf)) {
+        for (conf_num in 1:length(fit$conf)) {
+          conf <- fit$conf[[conf_num]]
+          if (!is.null(conf$contour)) {
+            ## Yeah!, we found a contour
+            # 						if(!exists("CP")) {
+            # use of exists("CP") became problematic when CP indeed existed outside of function environment
+            if (!FOUND) {
+              FOUND <- TRUE
+              CP <- list()
+              j <- 1
+              CP[[j]] <- list()
+            } else {
+
+              ## here is the place to confirm fit types
+              if (names(CP[[length(CP)]]$MLEpt[1]) != names(fit$MLEfit[1])) {
+                warning("contours of mixed fit type found, mismatch ignored")
+                break
+              }
+
+              j <- length(CP) + 1
+              CP[[j]] <- list
+            }
+
+            CP[[j]]$contour <- conf$contour
+            CP[[j]]$dist <- wblr$options$dist
+            CP[[j]]$MLEpt <- fit$MLEfit[-3]
+            if (!is.null(conf$options$lty)) {
+              CP[[j]]$lty <- conf$options$lty
+            } else {
+              if (!is.null(fit$options$lty)) {
+                CP[[j]]$lty <- fit$options$lty
+              } else {
+                CP[[j]]$lty <- wblr$options$lty
+              }
+            }
+            if (!is.null(conf$options$lwd)) {
+              CP[[j]]$lwd <- conf$options$lwd
+            } else {
+              if (!is.null(fit$options$lwd)) {
+                CP[[j]]$lwd <- fit$options$lwd
+              } else {
+                CP[[j]]$lwd <- wblr$options$lwd
+              }
+            }
+            if (!is.null(conf$options$col)) {
+              CP[[j]]$color <- conf$options$col
+            } else {
+              if (!is.null(fit$options$col)) {
+                CP[[j]]$color <- fit$options$col
+              } else {
+                CP[[j]]$color <- wblr$options$col
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  if (!exists("CP")) {
+    stop("no contour found in listed object, try adding CL argument to calculate")
+  }
+  CP
+}
+
+plot_default_args <- function() {
+  paronly <- c(
+    "ask", "fig", "fin", "lheight", "mai", "mar", "mex", "mfcol",
+    "mfrow", "mfg", "new", "oma", "omd", "omi", "pin", "plt", "ps", "pty",
+    "usr", "xlog", "ylog", "ylbias"
+  )
+  # parameters that can only be set using par()
+  # see $par() for the origin of this list
+  parreadonly <- c(
+    "xlog", "ylog", "adj", "ann", "ask",
+    "bg", "bty", "cex", "cex.axis", "cex.lab",
+    "cex.main", "cex.sub", "col", "col.axis", "col.lab",
+    "col.main", "col.sub", "crt", "err", "family",
+    "fg", "fig", "fin", "font", "font.axis",
+    "font.lab", "font.main", "font.sub", "lab", "las",
+    "lend", "lheight", "ljoin", "lmitre", "lty",
+    "lwd", "mai", "mar", "mex", "mfcol",
+    "mfg", "mfrow", "mgp", "mkh", "new",
+    "oma", "omd", "omi", "pch", "pin",
+    "plt", "ps", "pty", "smo", "srt",
+    "tck", "tcl", "usr", "xaxp", "xaxs",
+    "xaxt", "xpd", "yaxp", "yaxs", "yaxt",
+    "ylbias"
+  )
+  # par() parameter that can be set
+  # par(no.readonly=TRUE)
+  parplot <- unique(sort(c(
+    parreadonly[!(parreadonly %in% paronly)],
+    "type", "xlim", "ylim", "log", "main", "sub", "xlab", "ylab",
+    "ann", "axes", "frame.plot", "panel.first", "panel.last", "asp"
+  )))
+  # all valid (?) graphical parameters that can be supplied
+  # to plot.default
+  parplot
+}
+
+
+# function to plot weibayes ridge
+plt_weibayesridge <- function(failures, suspensions) {
+  # contour.wblr requires an object of class wblr so we create an aggregated table of the
+  # suspension data
+  fdf <- as.data.frame(table(failures))
+  ft <- as.numeric(levels(fdf[, 1]))
+  fq <- fdf[, 2]
+  sdf <- as.data.frame(table(suspensions))
+  st <- as.numeric(levels(sdf[, 1]))
+  sq <- sdf[, 2]
+  fail_edata <- data.frame(time = ft, event = rep(1, length(ft)), qty = fq)
+  sus_edata <- data.frame(time = st, event = rep(0, length(st)), qty = sq)
+  teq_frame <- rbind(fail_edata, sus_edata)
+  # contour plot
+  x <- wblr(teq_frame)
+  arg <- list(col = "darkgrey")
+  opa <- x[[1]]$options
+  CL <- seq(.1, .9, by = .1)
+  if (!is.null(CL)) {
+    if (class(CL) == "wblr") stop("multiple wblr objects must be entered as a list")
+  }
+  if (identical(class(x), "wblr")) x <- list(x)
+  if (!all(sapply(x, function(x) identical(class(x), "wblr")))) {
+    stop(
+      "Argument \"x\" is not of class \"wblr\" or ",
+      "a list of \"wblr\" objects."
+    )
+  }
+  if (is.null(CL)) {
+    C2P <- ExtractContoursFromObjects(x)
+  } else {
+    C2P <- CalculateContours(x, CL)
+  }
+  if (names(C2P[[1]]$contour)[1] == "Mulog" && AL == TRUE) {
+    for (C2Pli in 1:length(C2P)) {
+      C2P[[C2Pli]]$contour <- exp(C2P[[C2Pli]]$contour)
+    }
+    names(C2P[[1]]$contour) <- c("MuAL", "SigAL")
+  }
+  contourRanges <- findContourRanges(C2P)
+  if (!is.null(contourRanges)) {
+    xlimits <- range(contourRanges[, 1])
+    ylimits <- range(contourRanges[, 2])
+    opanames <- names(opa)
+    plotargs <- c(
+      list(x = NA, axes = TRUE),
+      opa[opanames %in% plot_default_args()]
+    )
+    plotargs$xlim <- xlimits
+    plotargs$ylim <- ylimits
+
+    plotargs$main <- opa$main.contour
+    plotargs$sub <- opa$sub.contour
+    plotargs$log <- ""
+    plotargs$xlab <- names(C2P[[1]]$contour)[1]
+    plotargs$ylab <- names(C2P[[1]]$contour)[2]
+    plotargs$main <- opa$main.contour
+    ## overrides from the dots
+    if (!is.null(arg$xlim)) plotargs$xlim <- arg$xlim
+    if (!is.null(arg$ylim)) plotargs$ylim <- arg$ylim
+    if (is.null(arg$main)) plotargs$main <- arg$main
+    if (is.null(arg$sub)) plotargs$sub <- arg$sub
+    do.call("plot.default", plotargs)
+    abline(
+      h = pretty(contourRanges[, 2], 10),
+      v = pretty(contourRanges[, 1], 10),
+      col = "grey"
+    )
+  }
+  for (cntr in 1:length(C2P)) {
+
+    # plot MLE points always a black 'x' symbol
+    points(
+      x = C2P[[cntr]]$MLEpt[1], y = C2P[[cntr]]$MLEpt[2],
+      # 			pch=opa$options$pch,
+      pch = 4,
+      # col=C2P[[cntr]]$color,
+      # col=opa$col,
+      col = "black",
+      lwd = opa$lwd.points,
+      cex = opa$cex.points
+    )
+    # browser()
+    lwd <- C2P[[cntr]]$lwd
+    lty <- C2P[[cntr]]$lty
+    col <- C2P[[cntr]]$color
+    ## overrides from the dots
+    if (!is.null(arg$lwd)) lwd <- arg$lwd
+    if (!is.null(arg$lty)) lty <- arg$lty
+    if (!is.null(arg$col)) col <- arg$col
+    # browser()
+    # plot the contours
+    points(C2P[[cntr]]$contour, type = "l", lwd = lwd, lty = lty, col = col)
+  }
+  beta_range <- seq(0, 10, by = 0.1)
+  # adding points along ridge of the estimate
+  wbpts <- NULL
+  for (b in beta_range) {
+    eta <- weibayesfix(teq_frame, beta = b)
+    this_pt <- c(eta, b)
+    wbpts <- rbind(wbpts, this_pt)
+  }
+  points(wbpts, pch = 3, col = "blue")
+  title(main = "Ridge of the Weibayes Estimate")
+  p <- recordPlot()
+  return(p)
+}
+
+weibull_curve <- function(expr, from = NULL, to = NULL, n = 101, add = FALSE,
+                          type = "l", xname = "x", xlab = xname, ylab = NULL, log = NULL,
+                          xlim = NULL, ...) {
+  sexpr <- substitute(expr)
+  if (is.name(sexpr)) {
+    expr <- call(as.character(sexpr), as.name(xname))
+  }
+  else {
+    expr <- sexpr
+  }
+  x <- seq.int(from, to, length.out = n)
+
+  ll <- list(x = x)
+  names(ll) <- xname
+  y <- eval(expr, envir = ll, enclos = parent.frame())
+  if (length(y) != length(x)) {
+    stop("'expr' did not evaluate to an object of length 'n'")
+  }
+  list(x = x, y = y)
+}
+
+# function needed for conversion of probability values between 0 and 1 to y
+# values digestible by the weibull canvas
+p2y <- function(p, canvas = "weibull") {
+  if (canvas == "weibull") {
+    ret <- log(qweibull(p, 1, 1))
+  }
+  if (canvas == "lognormal") {
+    ret <- qlnorm(p, 0, 1)
+  }
+  ret
+}
+
+# old version from version 1.0.10 of WeibullR
+p2y_old <- function(p,log="x"){
+  if (log == "x") ret <- log(qweibull(p,1,1))
+  if (log == "xy") ret <- qlnorm(p,0,1)
+  ret
+}
+
+findMaxDataRange <- function(x,log=""){
+  findrange <- function(wblr){
+    if(!is.null(wblr$data)){
+      alltimes<-c(wblr$data$dpoints$time, wblr$data$dlines$t1[wblr$data$dlines$t1>0],wblr$data$dlines$t2)
+      if(!is.null(alltimes)){
+        ret <- data.frame(xrange=range(alltimes))
+      }else{
+        stop("no time data, cannot create plot canvas.")
+      }
+      allppp<-c(wblr$data$dpoints$ppp, wblr$data$dlines$ppp)
+      if(!is.null(allppp)){
+        ret <- cbind(ret,yrange=range(allppp))
+      }else{
+        stop("$data$dpoints or $dlines contains no ppp -> ",
+             "cannot create plot canvas.")
+      }
+    }else{stop('Argument \"x\" contains no \"$data \" list object.')}
+    ret
+  }
+  if(all(sapply(x,function(x)identical(class(x),"wblr")))){
+    ret <- do.call("rbind",lapply(x,findrange))
+  }else{
+    stop("Argument \"x\" is no list of \"wblr\" objects.")
+  }
+  if(tolower(log) %in% c("x","xy","yx")){
+    ret[ret$xrange <=0,1] <- NA
+  }
+  ret
+}
+
+# function needed to plot neat looking canvas
+plot_default_args <- function(){
+  paronly <- c("ask","fig", "fin","lheight","mai", "mar", "mex", "mfcol",
+               "mfrow", "mfg","new","oma", "omd", "omi","pin", "plt", "ps", "pty",
+               "usr","xlog", "ylog","ylbias")
+  parreadonly <- c("xlog", "ylog", "adj", "ann", "ask",
+                   "bg", "bty", "cex", "cex.axis", "cex.lab",
+                   "cex.main", "cex.sub", "col", "col.axis", "col.lab",
+                   "col.main", "col.sub", "crt", "err", "family",
+                   "fg", "fig", "fin", "font", "font.axis",
+                   "font.lab", "font.main", "font.sub", "lab", "las",
+                   "lend", "lheight", "ljoin", "lmitre", "lty",
+                   "lwd", "mai", "mar", "mex", "mfcol",
+                   "mfg", "mfrow", "mgp", "mkh", "new",
+                   "oma", "omd", "omi", "pch", "pin",
+                   "plt", "ps", "pty", "smo", "srt",
+                   "tck", "tcl", "usr", "xaxp", "xaxs",
+                   "xaxt", "xpd", "yaxp", "yaxs", "yaxt",
+                   "ylbias")
+  parplot <- unique(sort(c(parreadonly[!(parreadonly %in% paronly)],
+                           "type","xlim","ylim","log","main","sub","xlab","ylab",
+                           "ann","axes","frame.plot","panel.first","panel.last","asp")))
+  parplot
+}
+
+# functions to get grid lines for weibull and lognormal canvas
+seq.wb <- function(from,to,base=seq(1,9,1)){
+  # define gridline positions for 'Median Rank' axis (= y axis)
+  r <- c(seq.log(from,.9,base),rev(1-seq.log(1-to,0.1,base))[-1])
+  r[r >= from & r<=to]}
+
+seq.log <- function(from,to,base=c(1,2,5)){
+  r <- NULL
+  for(i in floor(log10(from)):floor(log10(to)))r <- c(r,base*10^i)
+  r[r >= from & r<=to]}
+
+# function to generate a neat looking weibull canvas
+plotweibullcanvas <- function(x, ...) {
+  if (identical(class(x), "wblr"))
+    x <- list(x)
+  if (!all(sapply(x, function(x) identical(class(x), "wblr")))) {
+    stop("Argument \"x\" is not of class \"wblr\" or ",
+         "a list of \"wblr\" objects.")
+  }
+  arg <- list(...)
+  if (!is.null(arg$log)) {
+    warning("log option is to be depreciated in favor of canvas")
+    if (arg$log == "xy" || arg$log == "yx") {
+      arg$canvas <- "lognormal"
+      arg$log <- "xy"
+    }
+    else {
+      if (arg$log == "x") {
+        arg$canvas <- "weibull"
+      }
+      else {
+        stop("if used, log argument must be \"x\", \"xy\", or \"yx\" ")
+      }
+    }
+  }
+  else {
+    if (!is.null(arg$canvas)) {
+      if (tolower(arg$canvas) == "lognormal") {
+        arg$log <- "xy"
+      }
+      else {
+        arg$log <- "x"
+        if (tolower(arg$canvas) != "weibull") {
+          warning("canvas option not recognized, default \"weibull\" is assumed")
+          arg$canvas <- "weibull"
+        }
+      }
+    }
+  }
+  opa <- x[[1]]$options
+  opa <- modifyList(opa, arg)
+  dotargs <- arg
+  ra <- findMaxDataRange(x, opa$log)
+  xlimits <- range(ra$xrange, na.rm = TRUE)
+  ylimits <- range(ra$yrange, na.rm = TRUE)
+  if (is.null(opa$xlim)) {
+    opa$xlim <- c(10^(log10(xlimits[1]) - 0.5), 10^(log10(xlimits[2]) +
+                                                      1))
+  }
+  if (is.null(opa$ylim)) {
+    if (ylimits[1] < 0.01)
+      opa$ylim <- c(signif(ylimits[1], 1), 0.99)
+    else opa$ylim <- c(0.01, 0.99)
+  }
+  opanames <- names(opa)
+  plotargs <- c(list(x = NA, axes = FALSE), opa[opanames %in% plot_default_args()])
+  if (!is.null(plotargs$ylim)) {
+    plotargs$ylim <- p2y_old(plotargs$ylim, opa$log)
+  }
+  plotargs$main <- NULL
+  if (!is.null(opa$mar))
+    par(mar = opa$mar)
+  if (!is.null(opa$mai))
+    par(mai = opa$mai)
+  do.call(plot.default, plotargs)
+  if (opa$is.plot.grid) {
+    abline(h = p2y_old(seq.wb(opa$ylim[1]/10, 1 - (1 - opa$ylim[2])/10),
+                              opa$log), v = seq.log(opa$xlim[1]/10, opa$xlim[2] *
+                                                                 10, seq(0, 10, 1)), col = opa$col.grid)
+  }
+  r <- seq.log(opa$xlim[1]/10, opa$xlim[2] * 10, c(1, 5))
+  for (t in c(1, 3)) {
+    axis(t, at = seq.log(opa$xlim[1]/10, opa$xlim[2] * 10,
+                                    seq(0, 10, 0.2)), labels = NA, tcl = -0.25)
+    axis(t, at = r, labels = r, tcl = -0.75)
+  }
+  r <- c(seq.wb(opa$ylim[1]/10, 1 - (1 - opa$ylim[2])/10,
+                           c(1, 2, 5)), 0.9)
+  for (t in c(2, 4)) {
+    axis(t, at = p2y_old(seq.wb(opa$ylim[1]/10, 1 - (1 - opa$ylim[2])/10),
+                                opa$log), labels = NA, tcl = -0.25)
+    axis(t, at = p2y_old(r, opa$log), labels = r * 100, tcl = -0.75)
+  }
+  abline(h = 0, lty = 3, col = opa$col.grid)
+  title(main = opa$main, line = 3)
+  invisible()
+}
+```
+

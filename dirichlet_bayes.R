@@ -20,3 +20,4 @@ ggplot(res_df) +
   geom_area(aes(x, value, fill = name))
 
 # https://github.com/ATFutures/who3/tree/master/scenarios
+# https://mastering-shiny.org/

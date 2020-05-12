@@ -197,3 +197,5 @@ bayesplot::mcmc_scatter(fit_cens_informative, pars = c("shape", "scale"))
 bayesplot::mcmc_hex(fit_cens_informative, pars = c("shape", "scale"))
 bayesplot::mcmc_scatter(fit_cens_diffuse, pars = c("shape", "scale"))
 bayesplot::mcmc_hex(fit_cens_informative, pars = c("shape", "scale"))
+
+# https://theoreticalecology.wordpress.com/2010/09/17/metropolis-hastings-mcmc-in-r/

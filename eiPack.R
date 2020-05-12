@@ -82,7 +82,7 @@ library(rstan)
 # gamma priors
 set.seed(1)
 dta <- list(y = rweibull(1000, 2.51, 14400), N = 1000)
-fit <- rstan::stan(file = "weibayes.stan", data = dta)
+fit <- rstan::stan(file = "weibayes.stan", data = dta, chains = 4, cores = 4)
 
 summary(fit)
 # the means are very close to the actual values, that is pretty good
@@ -115,3 +115,85 @@ bayesplot::mcmc_combo(fit)
 
 bayesplot::mcmc_areas_ridges(fit3, pars = "scale")
 # https://discourse.mc-stan.org/t/numerical-problem-in-fitting-gamma-and-weibull-distributions/1813
+
+
+set.seed(1)
+dta3 <- list(y = rweibull(100000, 2.51, 14400), N = 100000)
+fit3 <- rstan::stan(file = "weibayes.stan", data = dta3, chains = 4, cores = 1)
+summary(fit3)
+
+# saveRDS(suspensions, file = "suspensions.RDS")
+suspensions <- readRDS(file = "suspensions.RDS")
+failures <- c(1017, 1876, 4112, 1228, 4541, 1379, 3511, 4082, 3118, 3585, 1550)
+
+dta_cens <- list(yobs = failures, Nobs = length(failures),
+                 ycen = suspensions, Ncen = length(suspensions))
+
+fit_cens <- rstan::stan(file = "weicens.stan", data = dta_cens, chains = 4, cores = 4)
+summary(fit_cens)
+plot(fit_cens)
+stan_diag(fit_cens, "sample")
+
+bayesplot::mcmc_areas(fit_cens, pars = "scale", prob = 0.95)
+
+rstan::optimizing(fit_cens)
+extra <- extract(fit_cens)
+shp <- extra$shape
+sca <- extra$scale
+
+dta <- rweibull(1000, shape = 2.51, scale = 14400)
+dta <- data.frame(time = dta)
+mod <- brms::brm(time ~ 1, family = weibull(link_shape = "log"), data = dta, chains = 4, cores = 4)
+
+library(mgcv)
+library(gamlss)
+gam(time ~ 1, family = weibull, data = dta)
+
+install.packages("bayestestR")
+library(bayestestR)
+map_estimate(shp)
+map_estimate(sca)
+
+# lets do the sampling one more time for informative and diffuse priors
+fit_cens_diffuse <- rstan::stan(file = "weicens_diffuse.stan", data = dta_cens, chains = 4, cores = 4)
+summary(fit_cens_diffuse)
+plot(fit_cens_diffuse)
+# informative priors
+fit_cens_informative<- rstan::stan(file = "weicens_informative.stan", data = dta_cens, chains = 4, cores = 4)
+summary(fit_cens_informative)
+plot(fit_cens_informative)
+
+# compiling all estimates to a neat table
+get_estimates <- function(fit) {
+  s <- summary(fit)
+  means <- s$summary[1:2, 1]
+  medians <- s$summary[1:2, 6]
+  map_shape <- bayestestR::map_estimate(rstan::extract(fit)$shape)
+  map_scale <- bayestestR::map_estimate(rstan::extract(fit)$scale)
+  maps <- c(shape = map_shape, scale = map_scale)
+  res <- rbind(means, medians, maps)
+  return(res)
+}
+
+res_diffuse <- get_estimates(fit_cens_diffuse)
+res_informa <- get_estimates(fit_cens_informative)
+
+res_diffuse
+res_informa
+
+bayesplot::mcmc_areas(fit_cens_diffuse, pars = "scale", prob = 0.95)
+bayesplot::mcmc_areas(fit_cens_diffuse, pars = "shape", prob = 0.95)
+bayesplot::mcmc_areas(fit_cens_informative, pars = "scale", prob = 0.95)
+bayesplot::mcmc_areas(fit_cens_informative, pars = "shape", prob = 0.95)
+
+?bayesplot
+bayesplot::mcmc_pairs(fit_cens_diffuse)
+bayesplot::mcmc_pairs(fit_cens_informative)
+
+bayesplot::mcmc_combo(fit_cens_diffuse)
+bayesplot::mcmc_combo(fit_cens_informative)
+
+bayesplot::mcmc_scatter(fit_cens_informative, pars = c("shape", "scale"))
+bayesplot::mcmc_hex(fit_cens_informative, pars = c("shape", "scale"))
+bayesplot::mcmc_scatter(fit_cens_diffuse, pars = c("shape", "scale"))
+bayesplot::mcmc_hex(fit_cens_informative, pars = c("shape", "scale"))

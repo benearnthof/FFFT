@@ -136,7 +136,6 @@ stan_diag(fit_cens, "sample")
 
 bayesplot::mcmc_areas(fit_cens, pars = "scale", prob = 0.95)
 
-rstan::optimizing(fit_cens)
 extra <- extract(fit_cens)
 shp <- extra$shape
 sca <- extra$scale
@@ -166,12 +165,12 @@ plot(fit_cens_informative)
 # compiling all estimates to a neat table
 get_estimates <- function(fit) {
   s <- summary(fit)
-  means <- s$summary[1:2, 1]
-  medians <- s$summary[1:2, 6]
+  mean <- s$summary[1:2, 1]
+  medi <- s$summary[1:2, 6]
   map_shape <- bayestestR::map_estimate(rstan::extract(fit)$shape)
   map_scale <- bayestestR::map_estimate(rstan::extract(fit)$scale)
   maps <- c(shape = map_shape, scale = map_scale)
-  res <- rbind(means, medians, maps)
+  res <- rbind(mean, medi, maps)
   return(res)
 }
 
@@ -180,6 +179,9 @@ res_informa <- get_estimates(fit_cens_informative)
 
 res_diffuse
 res_informa
+library(bayesplot)
+color_scheme_set("brewer-RdBu")
+bayesplot::mcmc_trace(fit_cens_informative, pars = c("scale"))
 
 bayesplot::mcmc_areas(fit_cens_diffuse, pars = "scale", prob = 0.95)
 bayesplot::mcmc_areas(fit_cens_diffuse, pars = "shape", prob = 0.95)
@@ -191,11 +193,81 @@ bayesplot::mcmc_pairs(fit_cens_diffuse)
 bayesplot::mcmc_pairs(fit_cens_informative)
 
 bayesplot::mcmc_combo(fit_cens_diffuse)
-bayesplot::mcmc_combo(fit_cens_informative)
+bayesplot::mcmc_combo(fit_cens_informative, pars = c("shape", "scale"))
+
+bayesplot::mcmc_trace(fit_cens_informative, pars = c("shape"))
+bayesplot::mcmc_trace(fit_cens_informative, pars = c("scale"))
 
 bayesplot::mcmc_scatter(fit_cens_informative, pars = c("shape", "scale"))
 bayesplot::mcmc_hex(fit_cens_informative, pars = c("shape", "scale"))
 bayesplot::mcmc_scatter(fit_cens_diffuse, pars = c("shape", "scale"))
-bayesplot::mcmc_hex(fit_cens_informative, pars = c("shape", "scale"))
+bayesplot::mcmc_hex(fit_cens_informative, pars = c("shape", "scale")) +
+  xlab("Shape") +
+  ylab("Scale") +
+  ggtitle("Posterior Density Estimate", subtitle = "Informative Priors")
 
 # https://theoreticalecology.wordpress.com/2010/09/17/metropolis-hastings-mcmc-in-r/
+
+# simulating how many errors there are in a certain timeframe for the fleet
+# we want to run n simulations with n parameter pairs from the informative sampling
+fleet <- c(failures, suspensions)
+
+source("functions.R")
+inspectionmatrix <- matrix(c(100000, 0), nrow = 1)
+bnds <- get_hbands(fleet, inspectionmatrix = inspectionmatrix)
+shapes <- as.vector(rstan::extract(fit_cens_informative)$shape)
+scales <- as.vector(rstan::extract(fit_cens_informative)$scale)
+result_informative <- simulation_multi_bayes(hmonth = 100, nmonths = 10, failures = failures, suspensions = suspensions, 
+                                             beta = shapes, theta = scales, maxlyf = 1000000)
+
+boxplot(colSums(result_informative))
+plot(result_informative)
+
+mlt <- reshape2::melt(result_informative)
+library(ggplot2)
+ggplot(mlt, aes(x = Var1, y = value, group = Var1)) +
+  geom_boxplot() +
+  theme_bw() +
+  ggtitle("Expected Events per Month", subtitle = "Informative Priors") +
+  ylab("Events") +
+  xlab("Months") +
+  scale_x_continuous(breaks = c(1:10))
+
+csums <- colSums(result_informative)
+
+mlt2 <- reshape2::melt(csums)
+ggplot(mlt2, aes(x = value)) +
+  geom_density() +
+  theme_bw() +
+  ggtitle("Total Expected Events after 10 Months", subtitle = "Density Estimate of Informative Priors") +
+  ylab("Density") +
+  xlab("Events")
+
+# repeating for uninformative priors
+shapes <- as.vector(rstan::extract(fit_cens_diffuse)$shape)
+scales <- as.vector(rstan::extract(fit_cens_diffuse)$scale)
+result_diffuse <- simulation_multi_bayes(hmonth = 100, nmonths = 10, failures = failures, suspensions = suspensions, 
+                                             beta = shapes, theta = scales, maxlyf = 1000000)
+
+boxplot(colSums(result_diffuse))
+plot(result_informative)
+
+mlt <- reshape2::melt(result_diffuse)
+library(ggplot2)
+ggplot(mlt, aes(x = Var1, y = value, group = Var1)) +
+  geom_boxplot() +
+  theme_bw() +
+  ggtitle("Expected Events per Month", subtitle = "Diffuse Priors") +
+  ylab("Events") +
+  xlab("Months") +
+  scale_x_continuous(breaks = c(1:10))
+
+csums <- colSums(result_diffuse)
+
+mlt2 <- reshape2::melt(csums)
+ggplot(mlt2, aes(x = value)) +
+  geom_density() +
+  theme_bw() +
+  ggtitle("Total Expected Events after 10 Months", subtitle = "Density Estimate of Diffuse Priors") +
+  ylab("Density") +
+  xlab("Events")

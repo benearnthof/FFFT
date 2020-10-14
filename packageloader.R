@@ -73,3 +73,5 @@ if (identical(character(0), failed)) {
 # https://github.com/gagolews/stringi/blob/master/devel/winbuilder/3.5/stringi_1.2.4.zip
 # place file in working directory and install with the next line
 # install.packages("stringi_1.2.4.zip", repos = NULL)
+
+# finally cloned this shit to a local machine!
